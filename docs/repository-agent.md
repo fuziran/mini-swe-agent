@@ -8,6 +8,8 @@ docker build -f Dockerfile.repository -t mini-swe-agent-repository:latest .
 
 The image contains this project's dependencies and pytest. To test another repository, build an image that also contains that repository's test dependencies and set `environment.image` to its tag. The runner has no network access, a read-only container filesystem, CPU and memory limits, and a writable mount of the selected repository.
 
+The build keeps a pip download cache across retries and installs dependencies before copying source code. Source changes reuse the dependency layer. If a package host times out during the first build, rerun the same command; downloaded packages can be reused.
+
 Run the repository agent from the repository you want it to work on. Set a default model with `MSWEA_MODEL_NAME` or pass `-m`:
 
 ```bash
