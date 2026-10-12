@@ -214,7 +214,11 @@ class RepositoryEnvironment:
         return output
 
     def get_template_vars(self, **kwargs) -> dict[str, Any]:
-        return {"repository_root": str(self.root), **kwargs}
+        return {
+            "repository_root": str(self.root),
+            "execution_root": "/workspace" if self.config.runner == "docker" else str(self.root),
+            **kwargs,
+        }
 
     def serialize(self) -> dict:
         return {

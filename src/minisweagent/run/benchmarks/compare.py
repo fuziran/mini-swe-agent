@@ -29,7 +29,11 @@ def trajectory_metrics(data: dict) -> dict:
         "api_calls": data.get("info", {}).get("model_stats", {}).get("api_calls", 0),
         "prompt_tokens": sum(item.get("prompt_tokens", 0) or 0 for item in usage),
         "completion_tokens": sum(item.get("completion_tokens", 0) or 0 for item in usage),
-        "tool_errors": sum(message.get("extra", {}).get("returncode") not in (None, 0) for message in messages),
+        "tool_errors": sum(
+            message.get("extra", {}).get("returncode") not in (None, 0)
+            and message.get("extra", {}).get("exception_info") != "action was not executed"
+            for message in messages
+        ),
         "model_latency_seconds": sum(message.get("extra", {}).get("model_latency_seconds", 0) for message in messages),
         "tool_duration_seconds": sum(message.get("extra", {}).get("duration_seconds", 0) for message in messages),
         "duration_seconds": max(timestamps) - min(timestamps) if len(timestamps) > 1 else None,

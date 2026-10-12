@@ -124,14 +124,20 @@ class InteractiveAgent(DefaultAgent):
     def execute_actions(self, message: dict) -> list[dict]:
         # Override to handle user confirmation and confirm_exit, with try/finally to preserve partial outputs
         actions = message.get("extra", {}).get("actions", [])
-        commands = [action.get("command", f"{action.get('tool_name')} {action.get('arguments', {})}") for action in actions]
+        commands = [
+            action.get("command", f"{action.get('tool_name')} {action.get('arguments', {})}") for action in actions
+        ]
         outputs = []
         try:
             self._ask_confirmation_or_interrupt(commands)
             for action in actions:
                 outputs.append(self.env.execute(action))
         except Submitted as e:
-            self._check_for_new_task_or_submit(e)
+            try:
+                self._check_for_new_task_or_submit(e)
+            except Submitted:
+                message = {**message, "extra": {**message["extra"], "actions": actions[: len(outputs)]}}
+                raise
         finally:
             result = self.add_messages(
                 *self.model.format_observation_messages(message, outputs, self.get_template_vars())

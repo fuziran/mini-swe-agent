@@ -18,6 +18,8 @@ mini -c repository.yaml -m "provider/model" -t "Fix the failing parser test" -o 
 
 The agent prompts before write, shell, test, and finish actions. `search_code`, `read_file`, and `list_symbols` do not require confirmation. The `--yolo` option disables confirmation. Use `environment.runner=local` only for a repository you trust, since local shell commands are not isolated.
 
+In Docker mode, shell commands run in `/workspace`; structured file tools use paths relative to the repository. `apply_patch` accepts a standard unified diff with `--- a/path`, `+++ b/path`, and `@@` hunk headers.
+
 Compare paired runs by trajectory instance ID (or by trajectory filename if no ID is present):
 
 ```bash

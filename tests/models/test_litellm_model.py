@@ -1,10 +1,25 @@
+import logging
 from unittest.mock import MagicMock, patch
 
+import litellm
 import pytest
 
 from minisweagent.exceptions import FormatError
 from minisweagent.models.litellm_model import LitellmModel, LitellmModelConfig
 from minisweagent.models.utils.actions_toolcall import BASH_TOOL
+from minisweagent.models.utils.retry import retry
+
+
+def test_bad_request_does_not_retry():
+    attempts = []
+
+    def invalid_request():
+        attempts.append(True)
+        raise litellm.exceptions.BadRequestError("Invalid API key", model="test", llm_provider="deepseek")
+
+    with pytest.raises(litellm.exceptions.BadRequestError):
+        retry(logger=logging.getLogger(__name__), abort_exceptions=LitellmModel.abort_exceptions)(invalid_request)
+    assert len(attempts) == 1
 
 
 class TestLitellmModelConfig:

@@ -52,7 +52,7 @@ REPOSITORY_TOOLS = [
         "type": "function",
         "function": {
             "name": "apply_patch",
-            "description": "Apply a unified diff to repository files",
+            "description": "Apply a standard unified diff with --- a/path, +++ b/path and @@ hunks; do not use *** Begin Patch",
             "parameters": {
                 "type": "object",
                 "properties": {"patch": {"type": "string"}},

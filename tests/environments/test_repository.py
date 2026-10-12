@@ -3,6 +3,7 @@ import subprocess
 import pytest
 
 from minisweagent.agents.default import DefaultAgent
+from minisweagent.agents.interactive import InteractiveAgent
 from minisweagent.environments.repository import RepositoryEnvironment
 from minisweagent.exceptions import Submitted
 from minisweagent.models.test_models import DeterministicToolcallModel, make_toolcall_output
@@ -15,6 +16,7 @@ def test_repository_tools_search_patch_and_test(tmp_path):
         "from example import answer\n\ndef test_answer():\n    assert answer() == 420\n"
     )
     env = RepositoryEnvironment(root=tmp_path, runner="local")
+    assert env.get_template_vars()["execution_root"] == str(tmp_path)
     assert "example.py:2" in env.execute({"tool_name": "search_code", "arguments": {"query": "return 41"}})["output"]
     assert (
         "example.py:1: symbol answer"
@@ -76,3 +78,22 @@ def test_repository_actions_complete_agent_loop(tmp_path):
     )
     assert agent.run("Find the answer")["submission"] == "Located answer"
     assert any(message.get("extra", {}).get("tool_name") == "search_code" for message in agent.messages)
+
+
+def test_interactive_finish_does_not_record_tool_error(tmp_path):
+    action = {"tool_name": "finish", "arguments": {"summary": "Done"}, "tool_call_id": "finish"}
+    model = DeterministicToolcallModel(
+        outputs=[
+            make_toolcall_output(None, [{"id": "finish", "type": "function", "function": {"name": "finish"}}], [action])
+        ]
+    )
+    agent = InteractiveAgent(
+        model,
+        RepositoryEnvironment(root=tmp_path, runner="local"),
+        system_template="Repository agent",
+        instance_template="{{task}}",
+        mode="yolo",
+        confirm_exit=False,
+    )
+    assert agent.run("Finish")["submission"] == "Done"
+    assert not any(message.get("extra", {}).get("returncode") == -1 for message in agent.messages)

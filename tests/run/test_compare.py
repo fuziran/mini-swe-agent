@@ -24,6 +24,7 @@ def test_compare_runs_pairs_instances_and_uses_external_grades(tmp_path):
                             }
                         },
                         {"extra": {"timestamp": 20, "returncode": 1}},
+                        {"extra": {"returncode": -1, "exception_info": "action was not executed"}},
                     ],
                 }
             )
