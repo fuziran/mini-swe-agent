@@ -63,11 +63,12 @@ class LitellmModel:
 
     def _query(self, messages: list[dict[str, str]], **kwargs):
         try:
+            model_kwargs = self.config.model_kwargs | kwargs
             return litellm.completion(
                 model=self.config.model_name,
                 messages=messages,
-                tools=[BASH_TOOL],
-                **(self.config.model_kwargs | kwargs),
+                tools=model_kwargs.pop("tools", [BASH_TOOL]),
+                **model_kwargs,
             )
         except litellm.exceptions.AuthenticationError as e:
             e.message += " You can permanently set your API key with `mini-extra config set KEY VALUE`."
@@ -79,9 +80,11 @@ class LitellmModel:
         return set_cache_control(prepared, mode=self.config.set_cache_control)
 
     def query(self, messages: list[dict[str, str]], **kwargs) -> dict:
+        started = time.perf_counter()
         for attempt in retry(logger=logger, abort_exceptions=self.abort_exceptions):
             with attempt:
                 response = self._query(self._prepare_messages_for_api(messages), **kwargs)
+        model_latency_seconds = time.perf_counter() - started
         cost_output = self._calculate_cost(response)
         GLOBAL_MODEL_STATS.add(cost_output["cost"])
         # Note: all model.query() implementations must persist the response and cost on FormatError.
@@ -89,6 +92,7 @@ class LitellmModel:
             actions = self._parse_actions(response)
         except FormatError as e:
             e.messages[0]["extra"].update(cost_output)
+            e.messages[0]["extra"]["model_latency_seconds"] = model_latency_seconds
             try:
                 e.messages[0]["extra"]["response"] = response.model_dump(mode="json")
             except Exception:
@@ -101,6 +105,7 @@ class LitellmModel:
             "actions": actions,
             "response": response.model_dump(),
             **cost_output,
+            "model_latency_seconds": model_latency_seconds,
             "timestamp": time.time(),
         }
         return message

@@ -124,7 +124,7 @@ class InteractiveAgent(DefaultAgent):
     def execute_actions(self, message: dict) -> list[dict]:
         # Override to handle user confirmation and confirm_exit, with try/finally to preserve partial outputs
         actions = message.get("extra", {}).get("actions", [])
-        commands = [action["command"] for action in actions]
+        commands = [action.get("command", f"{action.get('tool_name')} {action.get('arguments', {})}") for action in actions]
         outputs = []
         try:
             self._ask_confirmation_or_interrupt(commands)

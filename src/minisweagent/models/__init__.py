@@ -79,6 +79,7 @@ _MODEL_CLASS_MAPPING = {
     "litellm": "minisweagent.models.litellm_model.LitellmModel",
     "litellm_textbased": "minisweagent.models.litellm_textbased_model.LitellmTextbasedModel",
     "litellm_response": "minisweagent.models.litellm_response_model.LitellmResponseModel",
+    "repository": "minisweagent.models.repository_model.RepositoryModel",
     "openrouter": "minisweagent.models.openrouter_model.OpenRouterModel",
     "openrouter_textbased": "minisweagent.models.openrouter_textbased_model.OpenRouterTextbasedModel",
     "openrouter_response": "minisweagent.models.openrouter_response_model.OpenRouterResponseModel",
