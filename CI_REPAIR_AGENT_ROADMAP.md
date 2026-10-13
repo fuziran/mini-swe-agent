@@ -18,7 +18,7 @@
 | 开发环境 | 用户在 WSL 中运行仓库环境/模型测试，记录为 `6 passed`；本地示例仓库曾复现 `1 failed, 1 passed`，随后由代理改为 `2 passed`。 | 这不是整个项目测试集的结果；本次文档编写未重新运行 WSL 测试。 |
 | CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、输出目录和可选运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。 | 目前仅识别文本日志中的 `FAILED ...::...`，没有解析 `pytest.xml`。 |
 | 独立验证 | 入口创建 `baseline`、`agent`、`candidate` 三个检出目录；原始 SHA 跑全量 pytest，补丁先跑原失败测试再跑全量 pytest；限制变更为 `src/*.py`。 | 基线仅运行一次；没有专门识别 flaky 测试。 |
-| 隔离和权限 | pytest 在禁网、只读挂载的 Docker 容器中运行；代理在另一个受限容器中修改工作副本；[修复工作流模板](examples/ci_repair_demo/.github/workflows/repair.yml)把只读 `repair` 作业与有写权限的 `publish` 作业分开。 | 已实现最小隔离，但尚未完成恶意补丁、文件模式、依赖供应链等系统测试。 |
+| 隔离和权限 | 基线及候选 pytest 在禁网、只读挂载的 Docker 容器中运行；Agent 的 `bash` / `run_tests` 命令在另一个受限容器中执行。Agent 控制进程、模型调用、搜索/读文件和 `apply_patch` 在 GitHub Runner 宿主执行，只修改隔离的 agent 检出目录；[修复工作流模板](examples/ci_repair_demo/.github/workflows/repair.yml)把只读 `repair` 作业与有写权限的 `publish` 作业分开。 | 已实现测试命令隔离和作业权限分离，但不是“整个 Agent 都在容器里”；尚未完成恶意补丁、文件模式、依赖供应链等系统测试。 |
 | 自动 PR | 失败的 `Pytest` `workflow_run` 触发修复；发布前检查报告状态、运行 ID、SHA、`main` 是否仍指向失败提交、补丁能否应用及修改路径；创建 Draft PR，同一 SHA 的已有 PR 不重复创建。 | 只对示例仓库 `main` 上的 `push` 失败启用；不是通用 GitHub App。 |
 | 结果证据 | `report.json`、基线/目标/全量测试日志、`patch.diff` 和 trajectory 作为 Actions artifact 保存；PR 正文链接到原 CI 与修复运行。 | artifact 有保留期；轨迹和日志在公开前应检查敏感信息。 |
 
@@ -50,6 +50,7 @@
 | 完整失败报告 | 同上 | 超时、模型异常、补丁不适用、测试失败和变更越界都写出统一 `report.json`，含阶段、原因、耗时、调用数/成本（若可得）与退出状态。不能只依赖 Agent 的 `finish` 文本。 |
 | 发布前的负例检查 | `examples/ci_repair_demo/.github/workflows/repair.yml` | 用真实临时 Git 仓库或受控测试分支验证 SHA 不匹配、过期 `main`、重复 PR、修改测试/工作流/依赖文件、无效补丁及软链接/文件模式变更均不发布。发布作业不能执行候选仓库代码。 |
 | 固定依赖与权限 | 两个工作流、镜像构建 | 记录并固定 Agent 提交及关键工具/镜像版本；确认测试容器中没有 PR 写凭据和模型密钥；限制 Actions 权限及并发/成本预算。 |
+| CI 与复现环境一致 | `pytest.yml`、`Dockerfile.repository` | 当前原 CI 使用 Python 3.12，修复镜像基于 Python 3.11；将版本和测试依赖对齐后，用同一故障 SHA 确认仍能复现并修复。 |
 | 工作流本身可维护 | 工作流模板及相应验证 | 把实际演示仓库中的工作流与仓库模板保持同步；配置检查、动作版本升级时重跑一条端到端案例。 |
 | PR 检查的触发条件 | 示例仓库 Actions 设置与 `pytest.yml` | 记录 `action_required` 的确切原因与批准步骤；在相同权限设置下再次触发 PR 检查，明确哪些阶段仍需人工操作。 |
 
