@@ -21,10 +21,12 @@ jobs:
       - name: Run pytest and save its raw output
         run: |
           set -o pipefail
-          python -m pytest -q --color=no -p no:cacheprovider 2>&1 | tee pytest.log
+          python -m pytest -q --color=no -p no:cacheprovider --junitxml=pytest.xml 2>&1 | tee pytest.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pytest-log
-          path: pytest.log
+          path: |
+            pytest.log
+            pytest.xml
           if-no-files-found: error

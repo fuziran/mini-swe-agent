@@ -24,13 +24,13 @@ def _git(root: Path, *args: str, input: str | None = None) -> str:
     ).stdout.strip()
 
 
-def _test(root: Path, image: str, timeout: int) -> subprocess.CompletedProcess[str]:
+def _test(root: Path, image: str, timeout: int, tests: list[str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             "docker", "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp",
             "--cpus", "2", "--memory", "2g", "-e", "PYTHONDONTWRITEBYTECODE=1",
             "--mount", f"type=bind,source={root},target=/workspace,readonly", "-w", "/workspace",
-            image, "python", "-m", "pytest", "-q", "--color=no", "-p", "no:cacheprovider",
+            image, "python", "-m", "pytest", "-q", "--color=no", "-p", "no:cacheprovider", *(tests or []),
         ],
         text=True, capture_output=True, timeout=timeout,
     )
@@ -55,6 +55,7 @@ def _allowed_changes(root: Path) -> list[str]:
 def main(
     repo: Path = typer.Option(..., help="Checkout of the failed commit."),
     workflow: str = typer.Option(..., help="Name of the failed workflow."),
+    run_id: int | None = typer.Option(None, help="GitHub Actions run ID of the failed workflow."),
     sha: str = typer.Option(..., help="Full SHA of the failed commit."),
     log: Path = typer.Option(..., help="Raw pytest log from the failed workflow."),
     output: Path = typer.Option(..., help="Directory for patch, logs, report, and trajectory."),
@@ -65,6 +66,8 @@ def main(
     started = time.monotonic()
     output.mkdir(parents=True, exist_ok=True)
     report: dict = {"workflow": workflow, "sha": sha}
+    if run_id is not None:
+        report["run_id"] = run_id
 
     def stop(status: str) -> None:
         report.update(status=status, duration_seconds=round(time.monotonic() - started, 2))
@@ -124,6 +127,11 @@ def main(
         (output / "patch.diff").write_text(patch)
         _git(roots["candidate"], "apply", "--check", "-", input=patch)
         _git(roots["candidate"], "apply", "-", input=patch)
+
+        target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
+        (output / "target.log").write_text(target.stdout + target.stderr)
+        if target.returncode:
+            stop("target_failed")
 
         candidate = _test(roots["candidate"], image, timeout)
         (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)

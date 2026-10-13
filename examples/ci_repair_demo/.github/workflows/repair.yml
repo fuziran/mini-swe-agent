@@ -47,10 +47,13 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
+          test -n "$DEEPSEEK_API_KEY"
           python -m minisweagent.run.ci_repair \
             --repo "$GITHUB_WORKSPACE" \
             --workflow Pytest \
+            --run-id "$FAILED_RUN_ID" \
             --sha "$FAILED_SHA" \
             --log "$GITHUB_WORKSPACE/ci-log/pytest.log" \
             --output "$RUNNER_TEMP/repair-result" \
@@ -82,10 +85,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           test "$(jq -r .status repair-result/report.json)" = verified
           test "$(jq -r .sha repair-result/report.json)" = "$FAILED_SHA"
           test "$(jq -r .workflow repair-result/report.json)" = Pytest
+          test "$(jq -r .run_id repair-result/report.json)" = "$FAILED_RUN_ID"
           git fetch --quiet origin main
           test "$(git rev-parse FETCH_HEAD)" = "$FAILED_SHA"
           git apply --check repair-result/patch.diff
@@ -96,13 +101,41 @@ jobs:
             [[ "$file" == src/*.py ]] || exit 1
           done
           git diff --check
-          branch="ci-repair/${FAILED_SHA:0:12}"
-          git switch -c "$branch"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- src
-          git commit -m 'fix(run): repair reproducible pytest failure'
-          git push --set-upstream origin "$branch"
+          branch="ci-repair/${FAILED_SHA:0:12}"
+          existing_pr="$(gh pr list --state all --head "$branch" --json number --jq '.[0].number // empty')"
+          if test -n "$existing_pr"; then
+            echo "Repair PR #$existing_pr already exists for $FAILED_SHA; no new patch published"
+            exit 0
+          fi
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            git fetch --quiet origin "$branch"
+            test "$(git rev-parse 'FETCH_HEAD^{tree}')" = "$(git write-tree)"
+          else
+            git switch -c "$branch"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'fix(run): repair reproducible pytest failure'
+            git push --set-upstream origin "$branch"
+          fi
+          cat > "$RUNNER_TEMP/pr-body.md" <<EOF
+          ## Independent verification
+
+          - Failed commit: $FAILED_SHA
+          - Original Pytest run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$FAILED_RUN_ID
+          - Reproduced failing tests: $(jq -r '.baseline_failures | join(", ")' repair-result/report.json)
+          - Original failing run output: baseline.log in the repair evidence artifact
+          - Failed tests after patch: $(tail -n 1 repair-result/target.log)
+          - Full test suite after patch: $(tail -n 1 repair-result/candidate.log)
+          - Changed source files: $(jq -r '.changed_files | join(", ")' repair-result/report.json)
+          - Change check: patch applied cleanly; only src/*.py was staged
+          - Model calls: $(jq -r .model_calls repair-result/report.json)
+          - Model cost (USD): $(jq -r .model_cost repair-result/report.json)
+          - Repair duration (seconds): $(jq -r .duration_seconds repair-result/report.json)
+          - Repair evidence (logs, diff, trajectory, report): https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          Review the patch before merging.
+          EOF
           gh pr create --draft --base main --head "$branch" \
             --title "fix: repair pytest failure at ${FAILED_SHA:0:12}" \
-            --body "Automated repair for failed commit $FAILED_SHA. The original pytest suite failed in a clean container and passed after this patch in a separate clean container. Review the patch before merging."
+            --body-file "$RUNNER_TEMP/pr-body.md"
