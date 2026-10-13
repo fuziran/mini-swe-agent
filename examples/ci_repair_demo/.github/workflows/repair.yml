@@ -1,0 +1,108 @@
+name: Repair failed pytest
+
+on:
+  workflow_run:
+    workflows: [Pytest]
+    types: [completed]
+
+jobs:
+  repair:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'failure' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: pytest-log
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ci-log
+      - name: Install the repair agent
+        env:
+          AGENT_REPO: ${{ vars.AGENT_REPO }}
+          AGENT_REF: ${{ vars.AGENT_REF }}
+        run: |
+          test -n "$AGENT_REPO"
+          test -n "$AGENT_REF"
+          git clone --quiet "https://github.com/$AGENT_REPO.git" "$RUNNER_TEMP/agent"
+          git -C "$RUNNER_TEMP/agent" fetch --quiet origin "$AGENT_REF"
+          git -C "$RUNNER_TEMP/agent" checkout --quiet --detach FETCH_HEAD
+          python -m pip install "$RUNNER_TEMP/agent"
+          docker build -q -t mini-swe-agent-repository:latest -f "$RUNNER_TEMP/agent/Dockerfile.repository" "$RUNNER_TEMP/agent"
+      - name: Reproduce, repair, and verify in separate Docker containers
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python -m minisweagent.run.ci_repair \
+            --repo "$GITHUB_WORKSPACE" \
+            --workflow Pytest \
+            --sha "$FAILED_SHA" \
+            --log "$GITHUB_WORKSPACE/ci-log/pytest.log" \
+            --output "$RUNNER_TEMP/repair-result" \
+            --model deepseek/deepseek-flash
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repair-result
+          path: ${{ runner.temp }}/repair-result
+          if-no-files-found: warn
+
+  publish:
+    needs: repair
+    if: needs.repair.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: repair-result
+          path: repair-result
+      - name: Create a draft PR from the verified patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          test "$(jq -r .status repair-result/report.json)" = verified
+          test "$(jq -r .sha repair-result/report.json)" = "$FAILED_SHA"
+          test "$(jq -r .workflow repair-result/report.json)" = Pytest
+          git fetch --quiet origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$FAILED_SHA"
+          git apply --check repair-result/patch.diff
+          git apply repair-result/patch.diff
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -gt 0
+          for file in "${changed[@]}"; do
+            [[ "$file" == src/*.py ]] || exit 1
+          done
+          git diff --check
+          branch="ci-repair/${FAILED_SHA:0:12}"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- src
+          git commit -m 'fix(run): repair reproducible pytest failure'
+          git push --set-upstream origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "fix: repair pytest failure at ${FAILED_SHA:0:12}" \
+            --body "Automated repair for failed commit $FAILED_SHA. The original pytest suite failed in a clean container and passed after this patch in a separate clean container. Review the patch before merging."
