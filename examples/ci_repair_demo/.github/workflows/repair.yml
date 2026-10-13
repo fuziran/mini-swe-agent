@@ -81,27 +81,91 @@ jobs:
         with:
           name: repair-result
           path: repair-result
+      - name: Validate the verified patch before publishing
+        env:
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def git(*args: str) -> bytes:
+              return subprocess.run(["git", *args], check=True, capture_output=True).stdout
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise SystemExit(message)
+
+          report = json.loads(Path("repair-result/report.json").read_text())
+          sha = os.environ["FAILED_SHA"]
+          require(report.get("status") == "verified", "Repair was not verified")
+          require(report.get("sha") == sha and report.get("workflow") == "Pytest", "Repair source mismatch")
+          require(str(report.get("run_id")) == os.environ["FAILED_RUN_ID"], "Repair run mismatch")
+          require(git("rev-parse", "HEAD").strip().decode() == sha, "Checkout does not match failed commit")
+          require(not git("diff", "--cached", "--name-only", "-z"), "Checkout has staged changes")
+          subprocess.run(["git", "fetch", "--quiet", "origin", "main"], check=True)
+          require(git("rev-parse", "FETCH_HEAD").strip().decode() == sha, "Main has advanced")
+
+          patch_paths = [entry.split(b"\t", 2)[2] for entry in
+                         git("apply", "--numstat", "-z", "repair-result/patch.diff").split(b"\0") if entry]
+          require(
+              patch_paths and all(path.startswith(b"src/") and path.endswith(b".py") for path in patch_paths),
+              "Patch contains a disallowed path",
+          )
+          untracked = set(git("ls-files", "--others", "--exclude-standard", "-z").split(b"\0"))
+          subprocess.run(["git", "apply", "--check", "repair-result/patch.diff"], check=True)
+          subprocess.run(["git", "apply", "repair-result/patch.diff"], check=True)
+          require(
+              set(git("ls-files", "--others", "--exclude-standard", "-z").split(b"\0")) == untracked,
+              "Patch created untracked files",
+          )
+          entries = git("diff", "HEAD", "--raw", "--no-renames", "-z").split(b"\0")
+          entries.pop()
+          require(len(entries) % 2 == 0, "Invalid diff metadata")
+          paths = []
+          for metadata, path in zip(entries[::2], entries[1::2]):
+              fields = metadata.split()
+              require(
+                  len(fields) == 5 and fields[-1] == b"M"
+                  and fields[0][1:] == fields[1] and fields[1] in {b"100644", b"100755"}
+                  and path.startswith(b"src/") and path.endswith(b".py"),
+                  "Patch changes a disallowed path or file type",
+              )
+              paths.append(path.decode())
+          require(
+              paths and sorted(paths) == sorted(path.decode() for path in patch_paths)
+              == sorted(report.get("changed_files", [])),
+              "Patch differs from report",
+          )
+          subprocess.run(["git", "diff", "--check"], check=True)
+          subprocess.run(["git", "add", "--", *paths], check=True)
+          PY
+      - name: Check for an existing repair PR
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          branch="ci-repair/${FAILED_SHA:0:12}"
+          existing_pr="$(gh pr list --state all --head "$branch" --json number --jq '.[0].number // empty')"
+          if test -n "$existing_pr"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Repair PR #$existing_pr already exists for $FAILED_SHA; no new patch published"
+          fi
       - name: Create a draft PR from the verified patch
+        if: steps.existing.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
           FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          test "$(jq -r .status repair-result/report.json)" = verified
-          test "$(jq -r .sha repair-result/report.json)" = "$FAILED_SHA"
-          test "$(jq -r .workflow repair-result/report.json)" = Pytest
-          test "$(jq -r .run_id repair-result/report.json)" = "$FAILED_RUN_ID"
           git fetch --quiet origin main
           test "$(git rev-parse FETCH_HEAD)" = "$FAILED_SHA"
-          git apply --check repair-result/patch.diff
-          git apply repair-result/patch.diff
-          mapfile -t changed < <(git diff --name-only)
-          test "${#changed[@]}" -gt 0
-          for file in "${changed[@]}"; do
-            [[ "$file" == src/*.py ]] || exit 1
-          done
-          git diff --check
-          git add -- src
+          git diff --cached --check
           branch="ci-repair/${FAILED_SHA:0:12}"
           existing_pr="$(gh pr list --state all --head "$branch" --json number --jq '.[0].number // empty')"
           if test -n "$existing_pr"; then

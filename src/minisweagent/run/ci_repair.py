@@ -46,13 +46,20 @@ def _matches_failures(result: subprocess.CompletedProcess[str], expected: set[st
 
 
 def _allowed_changes(root: Path) -> list[str]:
-    paths = _git(root, "diff", "HEAD", "--name-only", "--no-renames").splitlines()
-    if (
-        not paths
-        or _git(root, "ls-files", "--others", "--exclude-standard")
-        or any(not path.startswith("src/") or not path.endswith(".py") for path in paths)
-    ):
+    entries = _git(root, "diff", "HEAD", "--raw", "--no-renames", "-z").split("\0")
+    entries.pop()
+    if not entries or len(entries) % 2 or _git(root, "ls-files", "--others", "--exclude-standard"):
         return []
+    paths = []
+    for metadata, path in zip(entries[::2], entries[1::2]):
+        fields = metadata.split()
+        if (
+            len(fields) != 5 or fields[-1] != "M"
+            or fields[0][1:] != fields[1] or fields[1] not in {"100644", "100755"}
+            or not path.startswith("src/") or not path.endswith(".py")
+        ):
+            return []
+        paths.append(path)
     return paths
 
 
