@@ -38,7 +38,7 @@
 
 当前进度：PR #1/#2/#3 均已人工合并，第三例合并提交为 `ca84b5d`，其 `main` 检查已通过。前两例的原始 CI 与修复 artifact、PR 元数据和 diff 已保存到 `$HOME/ci-repair-evidence/`；第三例的修复 artifact 已保存到 `$HOME/ci-repair-evidence/slug-6cf07e8/`，原始 CI artifact 与 PR 元数据仍需单独归档。前两例修复运行的当前 `run_attempt` 均为 2；第三例未记录为重跑。演示仓库的 `AGENT_REF=ci-repair-reliability-8f20dbb`，该标签当前指向提交 `8f20dbb3ed33cf7fd30cfaad349881d9fb7a4ab9`；Git 标签可被重写，仍需在案例记录中保存提交 SHA。镜像基础标签和部分依赖也未固定到不可变版本。
 
-1. 在 WSL 中确认本仓库和示例仓库的 `status`、提交及 PR #3 状态。当前本仓库另有四个与 CI 修复无关的未提交文件，不要覆盖或混入本任务。Windows Git 通过 WSL UNC 路径可能显示内容差异为零的“修改”，应以 WSL Git 为准。
+1. 在 WSL 中确认本仓库和示例仓库的 `status`、提交及 PR #3 状态。提交 `cab4da7` 推送后，本仓库在 WSL 中显示工作区干净；Windows Git 通过 WSL UNC 路径曾显示四个“修改”，与 WSL 状态不一致，应以 WSL Git 为准。
 2. 补齐第三例原始 CI artifact、PR 元数据和检查结果；三例都保存故障 SHA、原 CI 日志、补丁、`report.json`、PR 链接与检查结果。原始轨迹先放在本地私有目录；公开前检查敏感信息。
 3. 完整记录三例运行时版本：Agent 提交/标签、故障 SHA、模型名称及版本、Python、pytest、Docker 基础镜像摘要、配置和预算。CI 与修复镜像现均选 Python 3.12，pytest 固定为 9.0.2；`python:3.12-slim` 与本地镜像名 `latest` 仍不是不可变镜像引用。
 
@@ -83,7 +83,7 @@
 
 ## 4. 推荐的实际开发顺序
 
-1. **补齐第三例归档与环境记录。** 不重跑模型。保存原始 Pytest artifact、PR 元数据和检查状态，核对三例的版本、配置与成本口径；保留四个无关的本地未提交改动。
+1. **补齐第三例归档与环境记录。** 不重跑模型。保存原始 Pytest artifact、PR 元数据和检查状态，核对三例的版本、配置与成本口径；以 WSL Git 状态为准。
 2. **下一项代码任务：发布前拒绝路径。** 用真实临时 Git 仓库或受控分支验证过期 `main`、重复 PR、越界文件、无效补丁及软链接/文件模式变化都不会发布；必要时收紧 `repair.yml` 的检查。补齐入口 `unstable`、候选失败、超时等关键负例，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。
