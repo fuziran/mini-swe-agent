@@ -26,14 +26,16 @@
 
 | 案例 | 原故障与 CI | 修复结果 | 独立验证 / 模型记录 |
 | --- | --- | --- | --- |
-| 加法错误 | 失败 SHA `05520d4d4f2476b41fc2f7edecb895227a3afe84`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339529484) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339549288)成功；[Draft PR #1](https://github.com/fuziran/ci-repair-demo/pull/1)只将 `a - b` 改为 `a + b`；PR 检查通过。此前记录显示随后经人工合并。 | 基线 `test_add` 失败；候选全量 `2 passed`；5 次模型调用，报告估算成本约 **$0.00083**，入口耗时 **11.52 秒**。修复运行首次因模型密钥未正确设置失败，重跑成功。 |
-| 乘法错误 | 失败 SHA `9052dc1d4b290b508e089b16fca02ef46c4d6a22`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348094027) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348122879)成功；[Draft PR #2](https://github.com/fuziran/ci-repair-demo/pull/2)只将乘法中的 `a + b` 改为 `a * b`；PR 检查通过。示例仓库本地 `main` 当前最新提交为 `d7c2704 fix(run): repair reproducible pytest failure (#2)`。 | 基线 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `3 passed`；6 次模型调用，报告估算成本约 **$0.00050**，入口耗时 **13.72 秒**。同一修复运行重跑后没有产生第二个 PR。 |
+| 加法错误 | 失败 SHA `05520d4d4f2476b41fc2f7edecb895227a3afe84`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339529484) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339549288)第 2 次尝试成功；[PR #1](https://github.com/fuziran/ci-repair-demo/pull/1)最初为 Draft，只将 `a - b` 改为 `a + b`；PR 检查通过，已人工合并。 | 基线 `test_add` 失败；候选全量 `2 passed`；已归档报告记录 5 次模型调用、估算成本 **$0.000828588**、入口耗时 **11.52 秒**。首次尝试因模型密钥未正确设置失败。 |
+| 乘法错误 | 失败 SHA `9052dc1d4b290b508e089b16fca02ef46c4d6a22`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348094027) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348122879)已重跑一次；[PR #2](https://github.com/fuziran/ci-repair-demo/pull/2)最初为 Draft，只将 `a + b` 改为 `a * b`；PR 检查通过，已人工合并。 | 基线 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `3 passed`。目前归档的报告记录 5 次调用、**$0.00046395**、**12.01 秒**；此前聊天输出中，同一运行 ID 的另一份报告为 6 次调用、约 **$0.000500502**、**13.72 秒**。两份报告应按不同尝试区分，不计作两个独立案例。 |
 
-上述成本是模型接口报告的估算值，**不含 GitHub Runner、Docker 构建、等待时间和重跑成本**。`duration_seconds` 是入口自身耗时，也不等于完整 CI 墙钟时间。两个成功案例不能换算成“通用修复率”，更不能把同一运行的重跑算作新案例。
+上述成本是单次尝试的模型接口估算值，**不含 GitHub Runner、Docker 构建和等待时间，也不代表该案例所有重跑尝试的累计成本**。`duration_seconds` 是入口自身耗时，不等于完整 CI 墙钟时间。两个成功案例不能换算成“通用修复率”，同一运行的重跑也不是新案例。加法案例早期 artifact 只有 `pytest.log`，修复结果缺少 `target.log`；乘法案例的已归档 artifact 包含这两项。按各自原始版本保存证据，不补造历史文件。
 
 ## 3. 距离可用于简历的完整项目还缺什么
 
 ### P0：把当前成果固定成可复核基线
+
+当前进度：PR #1/#2 已在远端确认合并，PR #2 检查通过；两次原始 CI 与修复 artifact、PR 元数据和 diff 已下载到本机 `$HOME/ci-repair-evidence/`。两个修复运行的当前 `run_attempt` 均为 2。运行时版本固定与完整环境记录仍未完成。
 
 1. 在 WSL 中确认本仓库和示例仓库的 `status`、提交和 PR #2 远端状态。Windows Git 通过 WSL UNC 路径可能显示内容差异为零的“修改”，应以 WSL Git 为准；不要覆盖真实未提交改动。
 2. 下载两次成功修复的 Actions artifact，保存 SHA、原 CI 日志、补丁、`report.json`、PR 链接和检查结果。原始轨迹先放在本地私有目录；公开前检查是否含密钥、私有代码或个人信息。
