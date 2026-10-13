@@ -1,12 +1,12 @@
 # CI 失败自动修复 Agent：现状、差距与后续开发路线
 
-> 更新日期：2026-10-13。依据本仓库工作流提交 `77fb8e1`、示例仓库故障提交 `5d40574`、本地归档证据及 GitHub Actions / PR 输出。四例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
+> 更新日期：2026-10-13。依据本仓库工作流提交 `77fb8e1`、示例仓库故障提交 `5d40574` 与合并提交 `47cf4ad`、本地归档证据及 GitHub Actions / PR 输出。四例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
 
 ## 1. 项目目标与当前结论
 
 目标是在 mini-SWE-agent 基础上二次开发一个**可复现、可审查、可量化**的 CI 失败自动修复 Agent，用作 AI 应用开发 / Agent 开发实习的项目经历。当前范围固定为：GitHub Actions 中 `main` 分支的 Python `pytest` 失败，自动提出 **Draft PR**，由人审核和合并。暂不扩展到 Jenkins、JUnit 输入、多 Agent 或编译失败。
 
-**当前已完成四条受控端到端链路**：加法、乘法、字符串空白边界及负数乘法故障分别触发失败的 Pytest 工作流；修复工作流在隔离目录复现、调用模型、独立验证、创建 Draft PR。前三例已人工合并；第四例的 PR 检查通过，仍是等待人工审查的 Draft。**当前尚不能宣称对一般 CI 失败具有稳定修复率**：案例都来自同一个小型示例仓库，尚无固定评估集或跨项目验证。
+**当前已完成四条受控端到端链路**：加法、乘法、字符串空白边界及负数乘法故障分别触发失败的 Pytest 工作流；修复工作流在隔离目录复现、调用模型、独立验证、创建 Draft PR。四例的 PR 检查通过后均已人工合并，合并后的 `main` 检查通过。**当前尚不能宣称对一般 CI 失败具有稳定修复率**：案例都来自同一个小型示例仓库，尚无固定评估集或跨项目验证。
 
 第一、第二和第四例 PR 的 Pytest 检查最初都出现过 `action_required`，经人工批准后才运行并通过；第三例 PR 检查直接通过。因此已证明**自动创建 PR 与最终检查通过**，不能写成“PR 检查全程无需人工介入”。
 
@@ -29,7 +29,7 @@
 | 加法错误 | 失败 SHA `05520d4d4f2476b41fc2f7edecb895227a3afe84`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339529484) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38339549288)第 2 次尝试成功；[PR #1](https://github.com/fuziran/ci-repair-demo/pull/1)最初为 Draft，只将 `a - b` 改为 `a + b`；PR 检查通过，已人工合并。 | 基线 `test_add` 失败；候选全量 `2 passed`；已归档报告记录 5 次模型调用、估算成本 **$0.000828588**、入口耗时 **11.52 秒**。首次尝试因模型密钥未正确设置失败。 |
 | 乘法错误 | 失败 SHA `9052dc1d4b290b508e089b16fca02ef46c4d6a22`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348094027) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38348122879)已重跑一次；[PR #2](https://github.com/fuziran/ci-repair-demo/pull/2)最初为 Draft，只将 `a + b` 改为 `a * b`；PR 检查通过，已人工合并。 | 基线 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `3 passed`。目前归档的报告记录 5 次调用、**$0.00046395**、**12.01 秒**；此前聊天输出中，同一运行 ID 的另一份报告为 6 次调用、约 **$0.000500502**、**13.72 秒**。两份报告应按不同尝试区分，不计作两个独立案例。 |
 | 字符串空白边界 | 失败 SHA `6cf07e8d4adcfd34f9dcadd61ea97dd52e8f12a8`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38375617864) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38375646666)的 `repair` 与 `publish` 均成功；[PR #3](https://github.com/fuziran/ci-repair-demo/pull/3)最初为 Draft，仅将 `src/slug.py` 的 `split(" ")` 改为 `split()`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38375927602)通过，人工 squash 合并为 `ca84b5dbc94f906a76ff48d64a81159fab2cc666`；[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38378797950)通过。 | 两次基线都只在 `tests/test_slug.py::test_slugify_whitespace` 失败；补丁后目标 `1 passed`、全量 `5 passed`。本地保存的 `repair-result/report.json` 记录 `verified`、6 次模型调用、估算成本 **$0.001198908**、入口耗时 **15.43 秒**。 |
-| 负数乘法 | 失败 SHA `5d40574101704ab79e94c9bd3705baf666883a4a`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410059527) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410093457)的 `repair`、`publish` 均成功；[Draft PR #4](https://github.com/fuziran/ci-repair-demo/pull/4)仅将 `abs(a * b)` 改为 `a * b`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38410495258)经人工批准后通过，尚未合并。 | 两次基线均只在 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `5 passed`。报告记录 `verified`、6 次模型调用、估算成本 **$0.000585756**、入口耗时 **15.5 秒**；另有版本与配置证据。 |
+| 负数乘法 | 失败 SHA `5d40574101704ab79e94c9bd3705baf666883a4a`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410059527) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410093457)的 `repair`、`publish` 均成功；[PR #4](https://github.com/fuziran/ci-repair-demo/pull/4)仅将 `abs(a * b)` 改为 `a * b`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38410495258)经人工批准后通过，人工合并为 `47cf4ad02bab1ebd107aa579f7d5c50c9dd2de11`；[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38412406215)通过。 | 两次基线均只在 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `5 passed`。报告记录 `verified`、6 次模型调用、估算成本 **$0.000585756**、入口耗时 **15.5 秒**；另有版本与配置证据。 |
 
 上述成本是单次尝试的模型接口估算值，**不含 GitHub Runner、Docker 构建和等待时间，也不代表该案例所有重跑尝试的累计成本**。`duration_seconds` 是入口自身耗时，不等于完整 CI 墙钟时间。四个成功案例不能换算成“通用修复率”，同一运行的重跑也不是新案例。加法案例早期 artifact 只有 `pytest.log`，修复结果缺少 `target.log`；乘法案例的已归档 artifact 包含这两项。按各自原始版本保存证据，不补造历史文件。
 
@@ -37,7 +37,7 @@
 
 ### P0：把当前成果固定成可复核基线
 
-当前进度：PR #1/#2/#3 已人工合并；[PR #4](https://github.com/fuziran/ci-repair-demo/pull/4) 仍为 Draft，其检查经批准后通过。四例的原始 CI 日志、修复报告、补丁和 PR 元数据均已保存到 `$HOME/ci-repair-evidence/`。前三例历史运行没有保存 Agent 检出提交、Python 补丁版本、模型服务端版本或基础镜像摘要，不能从当前标签或镜像倒推。第四例的 `runtime.json` 实测 Agent SHA 为 `17ed1ad47842e09eb7146d7172df2688d3e44cd9`、Python 3.12.15、pytest 9.0.2，构建镜像 ID 为 `sha256:c8ecd219f5d9c330976982945e2f4b0eb6af43a8d5e5062d7567600194c1a0fb`；基础镜像仓库摘要和模型服务端具体版本仍未记录。
+当前进度：PR #1/#2/#3/#4 均已人工合并，第四例合并提交为 `47cf4ad`，其 `main` 检查已通过。四例的原始 CI 日志、修复报告、补丁和 PR 元数据均已保存到 `$HOME/ci-repair-evidence/`。前三例历史运行没有保存 Agent 检出提交、Python 补丁版本、模型服务端版本或基础镜像摘要，不能从当前标签或镜像倒推。第四例的 `runtime.json` 实测 Agent SHA 为 `17ed1ad47842e09eb7146d7172df2688d3e44cd9`、Python 3.12.15、pytest 9.0.2，构建镜像 ID 为 `sha256:c8ecd219f5d9c330976982945e2f4b0eb6af43a8d5e5062d7567600194c1a0fb`；基础镜像仓库摘要和模型服务端具体版本仍未记录。
 
 1. 已在 WSL 中确认本仓库与示例仓库工作区干净；Windows Git 通过 WSL UNC 路径曾误报四个“修改”，以 WSL Git 为准。
 2. 保留本地私有原始证据，公开前检查 trajectory 和日志中的敏感信息。加法案例早期未生成 `pytest.xml` 与 `target.log`，不补造历史文件。
@@ -70,13 +70,13 @@
 
 报告时固定分母为全部 **20** 例：复现率 = `reproduced / 20`，有效修复率 = `valid_fix / 20`，回归案例占比 = `regression / 20`。可补充“在已复现案例中的修复率”，但必须显示其分母。列出各状态的数量、总模型成本、每个有效修复的平均模型成本、耗时中位数和最长耗时；不要把案例筛掉后再计算主要成功率。
 
-**完成标准**：20 例清单、原始证据和汇总表可复算；公开展示至少一个成功案例、一个失败案例及失败原因。三条现有成功演示是链路证据，不能替代这个评估集。
+**完成标准**：20 例清单、原始证据和汇总表可复算；公开展示至少一个成功案例、一个失败案例及失败原因。四条现有成功演示是链路证据，不能替代这个评估集。
 
 ### P3：整理成可信的求职项目材料
 
 在 `docs/` 新增简短的架构说明和复现说明：系统边界、事件来源、三份检出、Agent/验证器/发布作业的职责、权限边界、状态与失败分类、运行命令、模型费用和设计取舍。准备一个 2–3 分钟演示：展示红色 Pytest、修复 artifact、Draft PR diff、PR 绿色检查和一次失败时拒绝发布。附上 20 例评估表与已知限制。当前仓库规则要求**不要自行追加 README**；后续若确需在 README 增加入口，先另行明确安排。
 
-简历表述应突出你的增量贡献，例如：仓库工具接口、隔离执行、独立验证、GitHub Actions 事件联动、Draft PR 发布与评估框架。可以写“已在四个受控故障提交上完成端到端演示，其中三例已人工合并”，暂时不要写“自动修复率 X%”或“适用于所有 Python 项目”。等 20 例完成后，再填入真实统计值和分母。
+简历表述应突出你的增量贡献，例如：仓库工具接口、隔离执行、独立验证、GitHub Actions 事件联动、Draft PR 发布与评估框架。可以写“已在四个受控故障提交上完成端到端演示，并由人工审核合并”，暂时不要写“自动修复率 X%”或“适用于所有 Python 项目”。等 20 例完成后，再填入真实统计值和分母。
 
 ### P4：再扩展范围
 
