@@ -1,6 +1,6 @@
 # CI 失败自动修复 Agent：现状、差距与后续开发路线
 
-> 更新日期：2026-10-13。依据本仓库提交 `8f20dbb`、示例仓库合并提交 `ca84b5d`、本地保存的修复证据，以及已核对的 GitHub Actions / PR 输出。后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
+> 更新日期：2026-10-13。依据本仓库提交 `4a1b62d`、示例仓库合并提交 `ca84b5d`、本地归档证据及 GitHub Actions / PR 输出。三例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
 
 ## 1. 项目目标与当前结论
 
@@ -36,11 +36,11 @@
 
 ### P0：把当前成果固定成可复核基线
 
-当前进度：PR #1/#2/#3 均已人工合并，第三例合并提交为 `ca84b5d`，其 `main` 检查已通过。前两例的原始 CI 与修复 artifact、PR 元数据和 diff 已保存到 `$HOME/ci-repair-evidence/`；第三例的修复 artifact 已保存到 `$HOME/ci-repair-evidence/slug-6cf07e8/`，原始 CI artifact 与 PR 元数据仍需单独归档。前两例修复运行的当前 `run_attempt` 均为 2；第三例未记录为重跑。演示仓库的 `AGENT_REF=ci-repair-reliability-8f20dbb`，该标签当前指向提交 `8f20dbb3ed33cf7fd30cfaad349881d9fb7a4ab9`；Git 标签可被重写，仍需在案例记录中保存提交 SHA。镜像基础标签和部分依赖也未固定到不可变版本。
+当前进度：PR #1/#2/#3 均已人工合并，第三例合并提交为 `ca84b5d`，其 `main` 检查已通过。三例的原始 CI 日志、修复报告、补丁和 PR 元数据均已保存到 `$HOME/ci-repair-evidence/`；第三例的原始 `pytest.xml` 也已归档。前两例修复运行的 `run_attempt` 均为 2，第三例为 1。已在 [案例记录](docs/ci-repair-cases.md) 中列出各证据位置、模型别名和已知配置。历史运行没有保存 Agent 检出提交、Python 补丁版本、模型服务端版本或基础镜像摘要，不能从当前标签或镜像倒推。当前 `AGENT_REF=ci-repair-reliability-8f20dbb` 指向 `8f20dbb3ed33cf7fd30cfaad349881d9fb7a4ab9`，但这不是三个历史运行实际检出提交的独立证明。
 
-1. 在 WSL 中确认本仓库和示例仓库的 `status`、提交及 PR #3 状态。提交 `cab4da7` 推送后，本仓库在 WSL 中显示工作区干净；Windows Git 通过 WSL UNC 路径曾显示四个“修改”，与 WSL 状态不一致，应以 WSL Git 为准。
-2. 补齐第三例原始 CI artifact、PR 元数据和检查结果；三例都保存故障 SHA、原 CI 日志、补丁、`report.json`、PR 链接与检查结果。原始轨迹先放在本地私有目录；公开前检查敏感信息。
-3. 完整记录三例运行时版本：Agent 提交/标签、故障 SHA、模型名称及版本、Python、pytest、Docker 基础镜像摘要、配置和预算。CI 与修复镜像现均选 Python 3.12，pytest 固定为 9.0.2；`python:3.12-slim` 与本地镜像名 `latest` 仍不是不可变镜像引用。
+1. 已在 WSL 中确认本仓库与示例仓库工作区干净；Windows Git 通过 WSL UNC 路径曾误报四个“修改”，以 WSL Git 为准。
+2. 保留本地私有原始证据，公开前检查 trajectory 和日志中的敏感信息。加法案例早期未生成 `pytest.xml` 与 `target.log`，不补造历史文件。
+3. 后续运行必须随 artifact 记录 Agent 检出 SHA、`python --version`、`pytest --version`、镜像摘要、模型供应商返回的具体版本及配置；现有三个历史案例缺失的字段标为“未记录”。CI 与修复镜像声明 Python 3.12、固定 pytest 9.0.2，但 `python:3.12-slim` 和本地镜像名 `latest` 仍是可变引用。
 
 **完成标准**：任何人能根据一张案例记录找到原始失败运行、补丁、验证报告、PR 和 PR 检查；无需依赖聊天记录。
 
@@ -83,7 +83,7 @@
 
 ## 4. 推荐的实际开发顺序
 
-1. **补齐第三例归档与环境记录。** 不重跑模型。保存原始 Pytest artifact、PR 元数据和检查状态，核对三例的版本、配置与成本口径；以 WSL Git 状态为准。
+1. **固定案例记录和后续运行的版本采集。** 第三例原始 Pytest artifact 与 PR 元数据已归档；[案例记录](docs/ci-repair-cases.md)列出可验证字段和历史缺口。新运行需保存精确版本及镜像摘要，不重跑模型伪造历史数据。
 2. **下一项代码任务：发布前拒绝路径。** 用真实临时 Git 仓库或受控分支验证过期 `main`、重复 PR、越界文件、无效补丁及软链接/文件模式变化都不会发布；必要时收紧 `repair.yml` 的检查。补齐入口 `unstable`、候选失败、超时等关键负例，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。
@@ -110,16 +110,15 @@ gh pr checks 3 -R "$DEMO_REPO"
 gh run view 38378797950 -R "$DEMO_REPO"
 ```
 
-第三例的修复 artifact 已保存；如需补齐原始 Pytest artifact 和 PR 元数据，可在**个人本地目录**执行以下命令，不把未经检查的 trajectory 提交到公开仓库：
+第三例的原始 Pytest artifact、修复 artifact 和 PR 元数据均已保存。可在**个人本地目录**核对文件；不要把未经检查的 trajectory 提交到公开仓库：
 
 ```bash
 EVIDENCE_ROOT="$HOME/ci-repair-evidence"
-mkdir -p "$EVIDENCE_ROOT/slug-6cf07e8/original-ci"
-gh run download 38375617864 -R fuziran/ci-repair-demo \
-  -n pytest-log -D "$EVIDENCE_ROOT/slug-6cf07e8/original-ci"
-gh pr view 3 -R fuziran/ci-repair-demo \
-  --json number,url,state,isDraft,mergedAt,mergeCommit,statusCheckRollup \
-  > "$EVIDENCE_ROOT/slug-6cf07e8/pr.json"
+test -s "$EVIDENCE_ROOT/slug-6cf07e8/original-ci/pytest.log"
+test -s "$EVIDENCE_ROOT/slug-6cf07e8/original-ci/pytest.xml"
+test -s "$EVIDENCE_ROOT/slug-6cf07e8/report.json"
+test -s "$EVIDENCE_ROOT/slug-6cf07e8/patch.diff"
+test -s "$EVIDENCE_ROOT/slug-6cf07e8/pr.json"
 ```
 
 若 GitHub artifact 已到期，记录其不可用状态，并保留现有 PR diff、Actions 日志和本地验证记录；不要重建历史数据冒充原运行证据。
