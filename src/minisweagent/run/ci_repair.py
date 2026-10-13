@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 import typer
 
@@ -40,6 +41,10 @@ def _failed_tests(output: str) -> set[str]:
     return set(FAILED_TEST.findall(output))
 
 
+def _matches_failures(result: subprocess.CompletedProcess[str], expected: set[str]) -> bool:
+    return result.returncode == 1 and _failed_tests(result.stdout + result.stderr) == expected
+
+
 def _allowed_changes(root: Path) -> list[str]:
     paths = _git(root, "diff", "HEAD", "--name-only", "--no-renames").splitlines()
     if (
@@ -65,79 +70,132 @@ def main(
 ) -> None:
     started = time.monotonic()
     output.mkdir(parents=True, exist_ok=True)
-    report: dict = {"workflow": workflow, "sha": sha}
+    report: dict[str, Any] = {"workflow": workflow, "sha": sha}
     if run_id is not None:
         report["run_id"] = run_id
+    stage = "input"
 
-    def stop(status: str) -> None:
-        report.update(status=status, duration_seconds=round(time.monotonic() - started, 2))
-        (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-        if status != "verified":
-            raise typer.Exit(1)
+    def reject(status: str, reason: str) -> str:
+        report.update(reason=reason, failed_stage=stage)
+        return status
 
-    if workflow != "Pytest" or len(sha) != 40 or _git(repo, "rev-parse", "HEAD") != sha:
-        stop("invalid_input")
-    incoming_failures = _failed_tests(log.read_text(errors="replace"))
-    if not incoming_failures:
-        stop("not_pytest_failure")
+    def repair() -> str:
+        nonlocal stage
+        if timeout <= 0:
+            return reject("invalid_input", "Timeout must be positive")
+        if workflow != "Pytest" or not re.fullmatch(r"[0-9a-f]{40}", sha) or _git(repo, "rev-parse", "HEAD") != sha:
+            return reject("invalid_input", "Expected the Pytest workflow and its exact 40-character commit SHA")
+        original_log = log.read_text(errors="replace")
+        incoming_failures = _failed_tests(original_log)
+        report["incoming_failures"] = sorted(incoming_failures)
+        if not incoming_failures:
+            return reject("not_pytest_failure", "Original CI log has no failed pytest node IDs")
 
-    with TemporaryDirectory(prefix="mini-ci-repair-") as temp:
-        roots = {name: Path(temp) / name for name in ("baseline", "agent", "candidate")}
-        for root in roots.values():
-            subprocess.run(["git", "clone", "--quiet", "--no-local", str(repo), str(root)], check=True)
-            _git(root, "checkout", "--detach", sha)
+        with TemporaryDirectory(prefix="mini-ci-repair-") as temp:
+            stage = "checkout"
+            roots = {name: Path(temp) / name for name in ("baseline", "agent", "candidate")}
+            for root in roots.values():
+                subprocess.run(["git", "clone", "--quiet", "--no-local", str(repo), str(root)], check=True)
+                _git(root, "checkout", "--detach", sha)
 
-        baseline = _test(roots["baseline"], image, timeout)
-        baseline_output = baseline.stdout + baseline.stderr
-        (output / "baseline.log").write_text(baseline_output)
-        report["baseline_failures"] = sorted(_failed_tests(baseline_output))
-        if baseline.returncode == 0 or not incoming_failures.intersection(report["baseline_failures"]):
-            stop("not_reproduced")
-
-        config = get_config_from_spec("repository.yaml")
-        config["environment"].update(root=roots["agent"], image=image)
-        config["agent"].update(
-            mode="yolo", confirm_exit=False, wall_time_limit_seconds=timeout,
-            output_path=output / "trajectory.json",
-        )
-        if model:
-            config["model"]["model_name"] = model
-        environment = get_environment(config["environment"])
-        agent = get_agent(get_model(config=config["model"]), environment, config["agent"])
-        report["status"] = "agent_error"
-        (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-        try:
-            result = agent.run(
-                "Fix the reproducible pytest failure. Do not modify tests or configuration. "
-                f"Failed workflow: {workflow}; commit: {sha}.\n"
-                f"Failing tests: {', '.join(sorted(incoming_failures))}.\n"
-                f"Original CI log (truncated):\n{log.read_text(errors='replace')[-12000:]}"
+            stage = "baseline"
+            baseline = _test(roots["baseline"], image, timeout)
+            baseline_output = baseline.stdout + baseline.stderr
+            (output / "baseline.log").write_text(baseline_output)
+            report.update(
+                baseline_failures=sorted(_failed_tests(baseline_output)), baseline_returncode=baseline.returncode
             )
-        finally:
-            environment.cleanup()
-        report.update(agent_status=result.get("exit_status"), model_cost=agent.cost, model_calls=agent.n_calls)
-        if result.get("exit_status") != "Submitted" or _git(roots["agent"], "rev-parse", "HEAD") != sha:
-            stop("agent_incomplete")
+            if baseline.returncode >= 125:
+                return reject("execution_error", "Docker could not run the first baseline")
+            if not _matches_failures(baseline, incoming_failures):
+                return reject("not_reproduced", "First baseline differs from the original pytest failures")
 
-        paths = _allowed_changes(roots["agent"])
-        report["changed_files"] = paths
-        if not paths:
-            stop("invalid_changes")
-        patch = _git(roots["agent"], "diff", "HEAD", "--binary", "--no-ext-diff") + "\n"
-        (output / "patch.diff").write_text(patch)
-        _git(roots["candidate"], "apply", "--check", "-", input=patch)
-        _git(roots["candidate"], "apply", "-", input=patch)
+            stage = "baseline_repeat"
+            repeat = _test(roots["baseline"], image, timeout)
+            repeat_output = repeat.stdout + repeat.stderr
+            (output / "baseline_repeat.log").write_text(repeat_output)
+            report.update(
+                baseline_repeat_failures=sorted(_failed_tests(repeat_output)), baseline_repeat_returncode=repeat.returncode
+            )
+            if repeat.returncode >= 125:
+                return reject("execution_error", "Docker could not run the repeated baseline")
+            if not _matches_failures(repeat, incoming_failures):
+                return reject("unstable", "Repeated baseline does not fail on the same pytest nodes")
 
-        target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
-        (output / "target.log").write_text(target.stdout + target.stderr)
-        if target.returncode:
-            stop("target_failed")
+            stage = "agent_setup"
+            config = get_config_from_spec("repository.yaml")
+            config["environment"].update(root=roots["agent"], image=image)
+            config["agent"].update(
+                mode="yolo", confirm_exit=False, wall_time_limit_seconds=timeout,
+                output_path=output / "trajectory.json",
+            )
+            if model:
+                config["model"]["model_name"] = model
+            environment = get_environment(config["environment"])
+            try:
+                agent = get_agent(get_model(config=config["model"]), environment, config["agent"])
+                stage = "agent"
+                try:
+                    result = agent.run(
+                        "Fix the reproducible pytest failure. Do not modify tests or configuration. "
+                        f"Failed workflow: {workflow}; commit: {sha}.\n"
+                        f"Failing tests: {', '.join(sorted(incoming_failures))}.\n"
+                        f"Original CI log (truncated):\n{original_log[-12000:]}"
+                    )
+                finally:
+                    report.update(model_cost=agent.cost, model_calls=agent.n_calls)
+            finally:
+                environment.cleanup()
+            report["agent_status"] = result.get("exit_status")
+            if result.get("exit_status") != "Submitted" or _git(roots["agent"], "rev-parse", "HEAD") != sha:
+                return reject("agent_incomplete", "Agent did not submit a patch on the failed commit")
 
-        candidate = _test(roots["candidate"], image, timeout)
-        (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)
-        if candidate.returncode:
-            stop("candidate_failed")
-        stop("verified")
+            stage = "changes"
+            paths = _allowed_changes(roots["agent"])
+            report["changed_files"] = paths
+            if not paths:
+                return reject("invalid_changes", "Patch must change only tracked src/*.py files")
+            patch = _git(roots["agent"], "diff", "HEAD", "--binary", "--no-ext-diff") + "\n"
+            (output / "patch.diff").write_text(patch)
+            stage = "apply_patch"
+            _git(roots["candidate"], "apply", "--check", "-", input=patch)
+            _git(roots["candidate"], "apply", "-", input=patch)
+
+            stage = "target"
+            target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
+            (output / "target.log").write_text(target.stdout + target.stderr)
+            if target.returncode >= 125:
+                return reject("execution_error", "Docker could not run the original failing tests")
+            if target.returncode:
+                return reject("target_failed", "Original failing tests still fail after the patch")
+
+            stage = "candidate"
+            candidate = _test(roots["candidate"], image, timeout)
+            (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)
+            if candidate.returncode >= 125:
+                return reject("execution_error", "Docker could not run the full pytest suite")
+            if candidate.returncode:
+                return reject("candidate_failed", "Full pytest suite fails after the patch")
+            return "verified"
+
+    try:
+        report["status"] = repair()
+    except subprocess.TimeoutExpired as exc:
+        report.update(status="timeout", failed_stage=stage, reason=f"{stage} exceeded {exc.timeout} seconds")
+    except Exception as exc:
+        report.update(
+            status={"input": "invalid_input", "checkout": "checkout_error", "apply_patch": "patch_error"}.get(
+                stage, "agent_error" if stage.startswith("agent") else "execution_error"
+            ),
+            failed_stage=stage,
+            error_type=type(exc).__name__,
+        )
+        raise
+    finally:
+        report["duration_seconds"] = round(time.monotonic() - started, 2)
+        (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    if report["status"] != "verified":
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
