@@ -1,16 +1,16 @@
 # CI 失败自动修复 Agent：现状、差距与后续开发路线
 
-> 更新日期：2026-10-14。依据本仓库工作流提交 `77fb8e1`、示例仓库前四例证据，以及新版受控故障提交 `21a37fd` 的 GitHub Actions / Draft PR 输出。[案例记录](docs/ci-repair-cases.md)列出证据索引；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
+> 更新日期：2026-10-14。依据本仓库工作流提交 `77fb8e1`、示例仓库五例的 GitHub Actions / PR 输出及本地归档证据。[案例记录](docs/ci-repair-cases.md)列出证据索引；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
 
 ## 1. 项目目标与当前结论
 
 目标是在 mini-SWE-agent 基础上二次开发一个**可复现、可审查、可量化**的 CI 失败自动修复 Agent，用作 AI 应用开发 / Agent 开发实习的项目经历。当前范围固定为：GitHub Actions 中 `main` 分支的 Python `pytest` 失败，自动提出 **Draft PR**，由人审核和合并。暂不扩展到 Jenkins、JUnit 输入、多 Agent 或编译失败。
 
-**当前已完成四条受控端到端链路**：加法、乘法、字符串空白边界及负数乘法故障分别触发失败的 Pytest 工作流；修复工作流在隔离目录复现、调用模型、独立验证、创建 Draft PR。四例的 PR 检查通过后均已人工合并，合并后的 `main` 检查通过。**当前尚不能宣称对一般 CI 失败具有稳定修复率**：案例都来自同一个小型示例仓库，尚无固定评估集或跨项目验证。
+**当前已完成五条受控端到端链路**：加法、乘法、字符串空白边界、负数乘法及字符串大小写故障分别触发失败的 Pytest 工作流；修复工作流在隔离目录复现、调用模型、独立验证、创建 Draft PR。五例的 PR 检查通过后均已人工合并，合并后的 `main` 检查通过。**当前尚不能宣称对一般 CI 失败具有稳定修复率**：案例都来自同一个小型示例仓库，尚无固定评估集或跨项目验证。
 
-新版 Agent `1b291c5ef119cc67b7e155cb741e5b2d19804cc6` 和工作流模板已部署到示例仓库。第五次受控故障 `21a37fda533398d6acbb7fd7b3a78ed0f05b51b9` 已触发失败 CI、通过修复与发布作业并创建 [Draft PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)；PR 的 [Pytest 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)经批准后通过。PR 仍为 Draft，尚未合并。
+新版 Agent `1b291c5ef119cc67b7e155cb741e5b2d19804cc6` 和工作流模板已部署到示例仓库。第五次受控故障 `21a37fda533398d6acbb7fd7b3a78ed0f05b51b9` 已触发失败 CI、通过修复与发布作业并创建 Draft PR；[PR #5](https://github.com/fuziran/ci-repair-demo/pull/5) 的 [Pytest 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)经批准后通过，人工 squash 合并为 `6602ac36f420f049b0acbe925b7b5ad5c763cae3`，[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38498107818)通过。
 
-第一、第二和第四例 PR 的 Pytest 检查最初都出现过 `action_required`，经人工批准后才运行并通过；第三例 PR 检查直接通过。因此已证明**自动创建 PR 与最终检查通过**，不能写成“PR 检查全程无需人工介入”。
+第一、第二、第四和第五例 PR 的 Pytest 检查最初都出现过 `action_required`，经批准后才运行并通过；第三例 PR 检查直接通过。因此已证明**自动创建 PR 与最终检查通过**，不能写成“PR 检查全程无需人工介入”。
 
 ## 2. 已完成的工作与可核对证据
 
@@ -24,7 +24,7 @@
 | 自动 PR | 失败的 `Pytest` `workflow_run` 触发修复；发布前检查报告状态、运行 ID、SHA、`main` 是否仍指向失败提交、补丁能否应用及修改路径；创建 Draft PR，同一 SHA 的已有 PR 不重复创建。 | 只对示例仓库 `main` 上的 `push` 失败启用；不是通用 GitHub App。 |
 | 结果证据 | `report.json`、两次基线/目标/全量测试日志、`patch.diff` 和 trajectory 作为 Actions artifact 保存；第四例起另外保存 `runtime.json`。第五次受控运行已记录 Agent SHA、实际运行版本、镜像 ID、固定基础镜像引用、依赖清单与配置。 | artifact 有保留期；轨迹和日志在公开前应检查敏感信息。 |
 
-### 四个真实端到端案例
+### 前四个历史案例
 
 | 案例 | 原故障与 CI | 修复结果 | 独立验证 / 模型记录 |
 | --- | --- | --- | --- |
@@ -33,17 +33,17 @@
 | 字符串空白边界 | 失败 SHA `6cf07e8d4adcfd34f9dcadd61ea97dd52e8f12a8`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38375617864) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38375646666)的 `repair` 与 `publish` 均成功；[PR #3](https://github.com/fuziran/ci-repair-demo/pull/3)最初为 Draft，仅将 `src/slug.py` 的 `split(" ")` 改为 `split()`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38375927602)通过，人工 squash 合并为 `ca84b5dbc94f906a76ff48d64a81159fab2cc666`；[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38378797950)通过。 | 两次基线都只在 `tests/test_slug.py::test_slugify_whitespace` 失败；补丁后目标 `1 passed`、全量 `5 passed`。本地保存的 `repair-result/report.json` 记录 `verified`、6 次模型调用、估算成本 **$0.001198908**、入口耗时 **15.43 秒**。 |
 | 负数乘法 | 失败 SHA `5d40574101704ab79e94c9bd3705baf666883a4a`；[Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410059527) | [修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38410093457)的 `repair`、`publish` 均成功；[PR #4](https://github.com/fuziran/ci-repair-demo/pull/4)仅将 `abs(a * b)` 改为 `a * b`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38410495258)经人工批准后通过，人工合并为 `47cf4ad02bab1ebd107aa579f7d5c50c9dd2de11`；[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38412406215)通过。 | 两次基线均只在 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `5 passed`。报告记录 `verified`、6 次模型调用、估算成本 **$0.000585756**、入口耗时 **15.5 秒**；另有版本与配置证据。 |
 
-上述成本是单次尝试的模型接口估算值，**不含 GitHub Runner、Docker 构建和等待时间，也不代表该案例所有重跑尝试的累计成本**。`duration_seconds` 是入口自身耗时，不等于完整 CI 墙钟时间。四个成功案例不能换算成“通用修复率”，同一运行的重跑也不是新案例。加法案例早期 artifact 只有 `pytest.log`，修复结果缺少 `target.log`；乘法案例的已归档 artifact 包含这两项。按各自原始版本保存证据，不补造历史文件。
+第五例的完整索引、运行版本和结果见[案例记录](docs/ci-repair-cases.md)。上述成本是单次尝试的模型接口估算值，**不含 GitHub Runner、Docker 构建和等待时间，也不代表该案例所有重跑尝试的累计成本**。`duration_seconds` 是入口自身耗时，不等于完整 CI 墙钟时间。五个成功案例不能换算成“通用修复率”，同一运行的重跑也不是新案例。加法案例早期 artifact 只有 `pytest.log`，修复结果缺少 `target.log`；乘法案例的已归档 artifact 包含这两项。按各自原始版本保存证据，不补造历史文件。
 
 ## 3. 距离可用于简历的完整项目还缺什么
 
 ### P0：把当前成果固定成可复核基线
 
-当前进度：PR #1/#2/#3/#4 均已人工合并，第四例合并提交为 `47cf4ad`，其 `main` 检查已通过。四例的原始 CI 日志、修复报告、补丁和 PR 元数据均已保存到 `$HOME/ci-repair-evidence/`。前三例历史运行没有保存 Agent 检出提交、Python 补丁版本、模型服务端版本或基础镜像摘要，不能从当前标签或镜像倒推。第四例的 `runtime.json` 实测 Agent SHA 为 `17ed1ad47842e09eb7146d7172df2688d3e44cd9`、Python 3.12.15、pytest 9.0.2，构建镜像 ID 为 `sha256:c8ecd219f5d9c330976982945e2f4b0eb6af43a8d5e5062d7567600194c1a0fb`；基础镜像仓库摘要和模型服务端具体版本仍未记录。
+当前进度：PR #1–#5 均已合并，第五例合并提交为 `6602ac3`，其 `main` 检查已通过。五例的原始 CI 日志、修复报告、补丁和 PR 元数据均已保存到 `$HOME/ci-repair-evidence/`。前三例历史运行没有保存 Agent 检出提交、Python 补丁版本、模型服务端版本或基础镜像摘要，不能从当前标签或镜像倒推。第四例的 `runtime.json` 实测 Agent SHA 为 `17ed1ad47842e09eb7146d7172df2688d3e44cd9`、Python 3.12.15、pytest 9.0.2，构建镜像 ID 为 `sha256:c8ecd219f5d9c330976982945e2f4b0eb6af43a8d5e5062d7567600194c1a0fb`；第四例的基础镜像仓库摘要和模型服务端具体版本仍未记录。
 
 1. 已在 WSL 中确认本仓库与示例仓库工作区干净；Windows Git 通过 WSL UNC 路径曾误报四个“修改”，以 WSL Git 为准。
 2. 保留本地私有原始证据，公开前检查 trajectory 和日志中的敏感信息。加法案例早期未生成 `pytest.xml` 与 `target.log`，不补造历史文件。
-3. 第四例已随 artifact 记录 Agent 检出 SHA、原 CI 与修复镜像的 Python/pytest 实际版本、构建镜像 ID、基础配置与入口参数。第五次受控运行已在线记录固定基础镜像摘要和 85 个已安装依赖；模型服务端具体版本如供应商提供，也应记录。前三例历史缺口标为“未记录”，第四例缺少的基础镜像摘要不能从当前标签倒推。
+3. 第四例已随 artifact 记录 Agent 检出 SHA、原 CI 与修复镜像的 Python/pytest 实际版本、构建镜像 ID、基础配置与入口参数。第五例另外记录固定基础镜像摘要和 85 个已安装依赖；模型服务端具体版本如供应商提供，也应记录。前三例历史缺口标为“未记录”，第四例缺少的基础镜像摘要不能从当前标签倒推。
 
 **完成标准**：任何人能根据一张案例记录找到原始失败运行、补丁、验证报告、PR 和 PR 检查；无需依赖聊天记录。
 
@@ -72,13 +72,13 @@
 
 报告时固定分母为全部 **20** 例：复现率 = `reproduced / 20`，有效修复率 = `valid_fix / 20`，回归案例占比 = `regression / 20`。可补充“在已复现案例中的修复率”，但必须显示其分母。列出各状态的数量、总模型成本、每个有效修复的平均模型成本、耗时中位数和最长耗时；不要把案例筛掉后再计算主要成功率。
 
-**完成标准**：20 例清单、原始证据和汇总表可复算；公开展示至少一个成功案例、一个失败案例及失败原因。四条现有成功演示是链路证据，不能替代这个评估集。
+**完成标准**：20 例清单、原始证据和汇总表可复算；公开展示至少一个成功案例、一个失败案例及失败原因。五条现有成功演示是链路证据，不能替代这个评估集。
 
 ### P3：整理成可信的求职项目材料
 
 在 `docs/` 新增简短的架构说明和复现说明：系统边界、事件来源、三份检出、Agent/验证器/发布作业的职责、权限边界、状态与失败分类、运行命令、模型费用和设计取舍。准备一个 2–3 分钟演示：展示红色 Pytest、修复 artifact、Draft PR diff、PR 绿色检查和一次失败时拒绝发布。附上 20 例评估表与已知限制。当前仓库规则要求**不要自行追加 README**；后续若确需在 README 增加入口，先另行明确安排。
 
-简历表述应突出你的增量贡献，例如：仓库工具接口、隔离执行、独立验证、GitHub Actions 事件联动、Draft PR 发布与评估框架。可以写“已在四个受控故障提交上完成端到端演示，并由人工审核合并”，暂时不要写“自动修复率 X%”或“适用于所有 Python 项目”。等 20 例完成后，再填入真实统计值和分母。
+简历表述应突出你的增量贡献，例如：仓库工具接口、隔离执行、独立验证、GitHub Actions 事件联动、Draft PR 发布与评估框架。可以写“已在五个受控故障提交上完成端到端演示，并由人工审核合并”，暂时不要写“自动修复率 X%”或“适用于所有 Python 项目”。等 20 例完成后，再填入真实统计值和分母。
 
 ### P4：再扩展范围
 
@@ -86,7 +86,7 @@
 
 ## 4. 推荐的实际开发顺序
 
-1. **完成第五次受控运行的收尾。** 原始 [失败 Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38496308852)、[成功修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38496330797)、[Draft PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)及经批准通过的 [PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)已有证据，artifact 已归档；审核补丁后人工合并，再归档合并后 `main` 检查。模型服务端具体版本仍未记录。
+1. **保留五例完整证据。** 第五例的原始 [失败 Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38496308852)、[成功修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38496330797)、[PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)、经批准通过的 [PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)及[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38498107818)均已归档。模型服务端具体版本仍未记录。
 2. **下一项代码任务：补剩余入口报告负例。** 发布前的越界补丁本地负例、在线重复 PR 检查、入口过期日志、基线超时及一次受控 `unstable` 案例已覆盖；候选失败状态分类已用真实 Docker 验证，继续核对模型异常、补丁不适用和变更越界的完整入口报告，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。
@@ -132,7 +132,7 @@ test -s "$EVIDENCE_ROOT/negative-multiply-5d40574/pr.json"
 
 项目可以作为成熟的实习项目展示时，应同时具备：
 
-- 至少一条可重复的真实 GitHub Actions 失败 → 独立修复验证 → Draft PR → PR 检查通过链路；现有四条案例已证明基本链路。
+- 至少一条可重复的真实 GitHub Actions 失败 → 独立修复验证 → Draft PR → PR 检查通过链路；现有五条案例已证明基本链路。
 - 明确的安全边界：测试执行无 PR 写凭据，发布前复核来源和补丁范围，候选失败或不稳定时不发布；通过负例验证这些规则。
 - 固定 20 例、统一判定与完整失败记录；给出带分母的修复率、回归情况、时间和费用。
 - 可复现的版本/配置、架构说明、运行步骤、可打开的 PR 和 CI 证据；简历陈述与证据完全一致。
