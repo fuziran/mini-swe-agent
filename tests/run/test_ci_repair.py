@@ -11,6 +11,7 @@ import yaml
 from typer.testing import CliRunner
 
 from minisweagent.config import get_config_from_spec
+from minisweagent.environments.repository import RepositoryEnvironment
 from minisweagent.models.test_models import make_output
 from minisweagent.run.ci_repair import (
     _allowed_changes,
@@ -73,6 +74,34 @@ def _behavior(mode: str) -> str:
         "def collect_original():\n"
         "    return mode != 'missing_original' or any('::test_original' in arg for arg in sys.argv)\n"
     )
+
+
+@pytest.mark.skipif(not _has_test_image(), reason="Repository test image is unavailable")
+def test_agent_tests_leave_only_valid_source_changes(tmp_path: Path, request: pytest.FixtureRequest) -> None:
+    repo, _ = _git_repo(
+        tmp_path,
+        "from src.behavior import answer\n\ndef test_answer():\n    assert answer() == 42\n",
+        "def answer():\n    return 41\n",
+    )
+    env = RepositoryEnvironment(root=repo, image="mini-swe-agent-repository:latest")
+    request.addfinalizer(env.cleanup)
+
+    assert env.execute({"tool_name": "run_tests", "arguments": {}})["returncode"] == 1
+    assert (
+        env.execute(
+            {
+                "tool_name": "apply_patch",
+                "arguments": {
+                    "patch": "--- a/src/behavior.py\n+++ b/src/behavior.py\n@@ -1,2 +1,2 @@\n def answer():\n-    return 41\n+    return 42\n"
+                },
+            }
+        )["returncode"]
+        == 0
+    )
+    assert env.execute({"tool_name": "run_tests", "arguments": {}})["returncode"] == 0
+    assert env.execute({"tool_name": "bash", "command": "python -m pytest -q"})["returncode"] == 0
+    assert env.execute({"tool_name": "bash", "command": "touch src/rogue.py"})["returncode"] != 0
+    assert _allowed_changes(repo) == ["src/behavior.py"]
 
 
 @pytest.mark.parametrize(

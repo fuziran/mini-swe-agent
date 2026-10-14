@@ -60,8 +60,12 @@ class RepositoryEnvironment:
                     "/tmp",
                     "-e",
                     "HOME=/tmp",
+                    "-e",
+                    "PYTHONDONTWRITEBYTECODE=1",
+                    "-e",
+                    "PYTEST_ADDOPTS=-p no:cacheprovider",
                     "--mount",
-                    f"type=bind,source={self.root},target=/workspace",
+                    f"type=bind,source={self.root},target=/workspace,readonly",
                 ],
             )
             if self.config.runner == "docker"
