@@ -15,7 +15,7 @@
 | 能力 | 当前实现 / 证据 | 边界 |
 | --- | --- | --- |
 | 仓库代理 | [仓库环境](src/minisweagent/environments/repository.py)提供搜索、读文件、应用补丁、运行测试和结束等工具；[仓库模型](src/minisweagent/models/repository_model.py)负责工具调用；[配置](src/minisweagent/config/repository.yaml)设置 40 步及成本上限。 | 这是本项目相对上游 mini-SWE-agent 的二次开发，应在简历中明确写成“基于 mini-SWE-agent 扩展”。 |
-| 开发环境 | 传入受控示例仓库和故障 SHA 后，相关测试在 WSL 中记录为 `51 passed, 1 warning`；第四例故障提交的容器测试为 `1 failed, 4 passed`，代理补丁后全量为 `5 passed`。固定基础镜像摘要后，示例仓库在隔离测试容器中为 `5 passed`。 | 相关测试不是整个项目测试集；未传在线参数时重复发布测试会跳过。 |
+| 开发环境 | 传入受控示例仓库和故障 SHA 后，相关测试在 WSL 中记录为 `52 passed, 1 warning`；第四例故障提交的容器测试为 `1 failed, 4 passed`，代理补丁后全量为 `5 passed`。固定基础镜像摘要后，示例仓库在隔离测试容器中为 `5 passed`。 | 相关测试不是整个项目测试集；未传在线参数时重复发布测试会跳过。 |
 | CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、可选的 pytest XML、输出目录和运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。 | 优先解析 pytest XML，缺失时回退到文本日志；当前 XML 映射只覆盖可还原文件路径的 pytest 测试节点，示例仓库线上工作流尚未同步新参数。 |
 | 独立验证 | 入口创建 `baseline`、`agent`、`candidate` 三个检出目录；原始 SHA 连续跑两次全量 pytest，要求两次失败节点与原 CI 完全一致；补丁先跑原失败测试再跑全量 pytest；限制变更为 `src/*.py`。 | 两次相同失败只能降低不稳定故障的误报风险，不能证明测试绝对稳定。 |
 | 隔离和权限 | 基线及候选 pytest 在禁网、只读挂载的 Docker 容器中运行；Agent 的 `bash` / `run_tests` 命令在另一个受限容器中执行。Agent 控制进程、模型调用、搜索/读文件和 `apply_patch` 在 GitHub Runner 宿主执行，只修改隔离的 agent 检出目录；[修复工作流模板](examples/ci_repair_demo/.github/workflows/repair.yml)把只读 `repair` 作业与有写权限的 `publish` 作业分开。 | 已实现测试命令隔离、作业权限分离和多类补丁越界负例；尚未完成依赖供应链等系统测试。 |
@@ -50,8 +50,8 @@
 | 任务 | 建议改动位置 | 验收方式 |
 | --- | --- | --- |
 | 结构化失败输入（已实现本地验证） | `src/minisweagent/run/ci_repair.py` | 优先解析现有 `pytest.xml`，缺失时回退文本日志；真实 pytest XML 已验证普通、类方法参数化、导入错误及无失败测试，并用第四例归档 XML 核对节点。示例仓库工作流尚待同步与端到端验证；不要把它描述成支持任意 JUnit 生态。 |
-| 减少误报（已实现，待补负例） | 同上 | 已对原 SHA 跑两次基线并要求失败节点与原 CI 完全一致；节点变化标记 `unstable`，不调用模型、不创建 PR。下一步用真实临时仓库验证拒绝路径。 |
-| 完整失败报告（基础实现） | 同上 | 已记录阶段、原因、耗时与可得的调用数/成本；真实 Docker 负例已验证过期失败日志和基线超时均在调用模型前拒绝并留下报告。Docker/pytest 未产出有效测试结果时归为 `execution_error`，避免误报为未复现。继续验证模型异常、补丁不适用、候选测试失败和变更越界的入口报告。 |
+| 减少误报（已实现，受控负例通过） | 同上 | 已对原 SHA 跑两次基线并要求失败节点与原 CI 完全一致。一次性临时 Git 仓库的真实 pytest/Docker 运行中，失败节点从 `test_switch[early]` 变为 `test_switch[late]`，入口报告 `unstable`，没有模型调用或补丁；这种时钟案例不放入常规必过测试集。 |
+| 完整失败报告（基础实现） | 同上 | 已记录阶段、原因、耗时与可得的调用数/成本；真实 Docker 负例已验证过期失败日志和基线超时均在调用模型前拒绝并留下报告。Docker/pytest 未产出有效测试结果时归为 `execution_error`，避免误报为未复现。真实临时 Git 仓库已验证原失败测试仍失败与全量回归的候选状态分类；模型异常、补丁不适用、变更越界和候选失败的完整入口报告仍待验证。 |
 | 发布前的负例检查（主要路径已覆盖） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 真实临时 Git 仓库已验证 SHA 不匹配、过期 `main`、修改测试/工作流/依赖文件、无效补丁及软链接/文件模式变更均无法暂存；重复 PR 的在线测试已用第四例故障 SHA 通过。发布作业不能执行候选仓库代码。 |
 | 固定依赖与权限 | 两个工作流、镜像构建 | 第四例实测 Agent SHA 和 pytest 固定版本；真实 Docker 测试已确认宿主进程设置 `GITHUB_TOKEN`、`GH_TOKEN` 和 `DEEPSEEK_API_KEY` 时，测试容器的环境变量中均不可见。已在本地把基础镜像固定到仓库摘要，镜像构建及运行记录步骤均通过，并在工作流模板中要求 40 位 Agent SHA、记录基础镜像引用与已安装依赖。尚待示例仓库同步和新版运行验证；Actions 并发限制仍需处理。 |
 | CI 与复现环境一致（已完成主要对齐） | `pytest.yml`、`Dockerfile.repository` | 第四例实测原 CI 与修复镜像均为 Python 3.12.15 和 pytest 9.0.2，并完成 GitHub 端到端验证。 |
@@ -85,7 +85,7 @@
 ## 4. 推荐的实际开发顺序
 
 1. **保留已完成的新版运行证据。** 第四例的原始 Pytest artifact、修复 artifact、PR diff 与检查结果已归档；[案例记录](docs/ci-repair-cases.md)列出精确版本及历史缺口。基础镜像仓库摘要和模型服务端具体版本仍需在后续运行中补充。
-2. **下一项代码任务：补剩余拒绝路径。** 发布前的越界补丁本地负例、在线重复 PR 检查、入口过期日志及基线超时已覆盖；继续验证入口 `unstable`、候选失败等关键负例，不使用 mock/patch。
+2. **下一项代码任务：补剩余入口报告负例。** 发布前的越界补丁本地负例、在线重复 PR 检查、入口过期日志、基线超时及一次受控 `unstable` 案例已覆盖；候选失败状态分类已用真实 Docker 验证，继续核对模型异常、补丁不适用和变更越界的完整入口报告，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。
 
