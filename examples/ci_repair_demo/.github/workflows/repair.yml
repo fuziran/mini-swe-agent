@@ -99,6 +99,7 @@ jobs:
             --run-id "$FAILED_RUN_ID" \
             --sha "$FAILED_SHA" \
             --log "$GITHUB_WORKSPACE/ci-log/pytest.log" \
+            --xml "$GITHUB_WORKSPACE/ci-log/pytest.xml" \
             --output "$RUNNER_TEMP/repair-result" \
             --model "$REPAIR_MODEL" \
             --image "$REPAIR_IMAGE" \
