@@ -21,10 +21,9 @@ FAILED_TEST = re.compile(r"(?m)^FAILED (\S+::\S+)")
 COLLECTION_ERROR = re.compile(r"(?m)^(?:ERROR collecting |ImportError:|ModuleNotFoundError:)")
 
 
-def _git(root: Path, *args: str, input: str | None = None) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=root, input=input, text=True, capture_output=True, check=True
-    ).stdout.strip()
+def _git(root: Path, *args: str, input: str | None = None, strip: bool = True) -> str:
+    output = subprocess.run(["git", *args], cwd=root, input=input, text=True, capture_output=True, check=True).stdout
+    return output.strip() if strip else output
 
 
 def _test(
@@ -308,7 +307,7 @@ def main(
             report["changed_files"] = paths
             if not paths:
                 return reject("invalid_changes", "Patch must change only tracked src/*.py files")
-            patch = _git(roots["agent"], "diff", "HEAD", "--binary", "--no-ext-diff") + "\n"
+            patch = _git(roots["agent"], "diff", "HEAD", "--binary", "--no-ext-diff", strip=False)
             (output / "patch.diff").write_text(patch)
             stage = "apply_patch"
             _apply_candidate_patch(roots["candidate"], patch, report)

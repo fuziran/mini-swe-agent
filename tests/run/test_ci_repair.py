@@ -17,6 +17,7 @@ from minisweagent.run.ci_repair import (
     _allowed_changes,
     _apply_candidate_patch,
     _candidate_issue,
+    _git,
     _target_passed,
     _test,
     _xml_results,
@@ -632,3 +633,15 @@ def test_patch_conflict_reports_safe_reason(tmp_path: Path) -> None:
         "error_type": "CalledProcessError",
     }
     assert (repo / "src/behavior.py").read_text() == "answer = 50\n"
+
+
+def test_patch_export_preserves_trailing_blank_context(tmp_path: Path) -> None:
+    repo, _ = _git_repo(tmp_path, source="def answer():\n    return 41\n\n")
+    candidate = tmp_path / "candidate"
+    subprocess.run(["git", "clone", "--quiet", str(repo), str(candidate)], check=True)
+    (repo / "src/behavior.py").write_text("def answer():\n    return 42\n\n")
+
+    patch = _git(repo, "diff", "HEAD", "--binary", "--no-ext-diff", strip=False)
+    assert patch.endswith(" \n")
+    _apply_candidate_patch(candidate, patch, {})
+    assert (candidate / "src/behavior.py").read_text() == (repo / "src/behavior.py").read_text()
