@@ -59,7 +59,7 @@
 | 固定依赖与权限 | 两个工作流、镜像构建 | 真实 Docker 测试已确认宿主进程设置 `GITHUB_TOKEN`、`GH_TOKEN` 和 `DEEPSEEK_API_KEY` 时，测试容器的环境变量中均不可见。第五次受控运行已在线验证 40 位 Agent SHA `1b291c5`、Python 3.12.15、pytest 9.0.2、基础镜像引用 `python:3.12-slim@sha256:a6e34c5…`、构建镜像 ID 及 85 个依赖记录。 |
 | CI 与复现环境一致（已完成主要对齐） | `pytest.yml`、`Dockerfile.repository` | 第四例实测原 CI 与修复镜像均为 Python 3.12.15 和 pytest 9.0.2，并完成 GitHub 端到端验证。 |
 | 工作流本身可维护 | 工作流模板及相应验证 | 示例仓库已同步模板并通过健康提交的 Pytest 检查；第五次受控故障的修复、发布及 PR 检查均成功。 |
-| 同一失败提交的并发控制（本地配置已验证） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 修复工作流按失败 SHA 串行，最多保留 100 个等待运行；发布前的 `main` SHA、补丁及重复 PR 检查仍保留。结构及现有 PR 的在线查询已验证，示例仓库本地文件已同步；远端发布和真实竞争运行尚未完成。 |
+| 同一失败提交的并发控制（已同步示例仓库） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 修复工作流按失败 SHA 串行，最多保留 100 个等待运行；发布前的 `main` SHA、补丁及重复 PR 检查仍保留。结构及现有 PR 的在线查询已验证；示例仓库更新后的 [Pytest 运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38516956141)通过，[修复工作流](https://github.com/fuziran/ci-repair-demo/actions/runs/38516983170)因无失败而跳过。尚未进行真实同 SHA 并发竞争测试。 |
 | PR 检查的触发条件 | 示例仓库 Actions 设置与 `pytest.yml` | 第一、第二、第四、第五例出现 `action_required`，经批准后检查通过；明确记录批准步骤和权限设置，不将链路描述为完全无人值守。 |
 
 此处只写**有意义的负例和集成验证**。仓库规则要求不要用 mock/patch 模拟外部行为，也不要写仅重复实现细节的平凡测试。可用临时 Git 仓库、真实 pytest 和 Docker 来验证入口边界；PR 创建部分可在受控示例仓库中验证。
