@@ -73,6 +73,12 @@ def _execution_error(result: subprocess.CompletedProcess[str]) -> bool:
     )
 
 
+def _test_status(result: subprocess.CompletedProcess[str], failed_status: str) -> str | None:
+    if _execution_error(result):
+        return "execution_error"
+    return failed_status if result.returncode else None
+
+
 def _allowed_changes(root: Path) -> list[str]:
     entries = _git(root, "diff", "HEAD", "--raw", "--no-renames", "-z").split("\0")
     entries.pop()
@@ -207,18 +213,22 @@ def main(
             stage = "target"
             target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
             (output / "target.log").write_text(target.stdout + target.stderr)
-            if _execution_error(target):
-                return reject("execution_error", "Original failing tests produced no valid pytest result")
-            if target.returncode:
-                return reject("target_failed", "Original failing tests still fail after the patch")
+            if status := _test_status(target, "target_failed"):
+                return reject(
+                    status,
+                    "Original failing tests produced no valid pytest result" if status == "execution_error"
+                    else "Original failing tests still fail after the patch",
+                )
 
             stage = "candidate"
             candidate = _test(roots["candidate"], image, timeout)
             (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)
-            if _execution_error(candidate):
-                return reject("execution_error", "Full pytest suite produced no valid pytest result")
-            if candidate.returncode:
-                return reject("candidate_failed", "Full pytest suite fails after the patch")
+            if status := _test_status(candidate, "candidate_failed"):
+                return reject(
+                    status,
+                    "Full pytest suite produced no valid pytest result" if status == "execution_error"
+                    else "Full pytest suite fails after the patch",
+                )
             return "verified"
 
     try:

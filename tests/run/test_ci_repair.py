@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from minisweagent.run.ci_repair import _execution_error, _matches_failures, app
+from minisweagent.run.ci_repair import _execution_error, _matches_failures, _test, _test_status, app
 
 
 def _git_repo(tmp_path: Path, test: str | None = None) -> tuple[Path, str]:
@@ -295,3 +295,23 @@ def test_host_credentials_do_not_enter_pytest_container(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(not _has_test_image(), reason="Repository test image is unavailable")
+def test_candidate_validation_distinguishes_original_failure_from_regression(tmp_path: Path) -> None:
+    repo, _ = _git_repo(
+        tmp_path,
+        "from calculator import answer\n\n"
+        "def test_original():\n    assert answer > 50\n\n"
+        "def test_regression():\n    assert answer != 100\n",
+    )
+    source = repo / "calculator.py"
+    source.write_text("answer = 43\n")
+    target = _test(repo, "mini-swe-agent-repository:latest", 60, ["tests/test_calc.py::test_original"])
+    assert _test_status(target, "target_failed") == "target_failed", target.stdout + target.stderr
+
+    source.write_text("answer = 100\n")
+    target = _test(repo, "mini-swe-agent-repository:latest", 60, ["tests/test_calc.py::test_original"])
+    candidate = _test(repo, "mini-swe-agent-repository:latest", 60)
+    assert _test_status(target, "target_failed") is None, target.stdout + target.stderr
+    assert _test_status(candidate, "candidate_failed") == "candidate_failed", candidate.stdout + candidate.stderr
