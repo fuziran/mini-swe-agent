@@ -1,12 +1,14 @@
 # CI 失败自动修复 Agent：现状、差距与后续开发路线
 
-> 更新日期：2026-10-14。依据本仓库工作流提交 `77fb8e1`、示例仓库故障提交 `5d40574` 与合并提交 `47cf4ad`、本地归档证据及 GitHub Actions / PR 输出。四例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
+> 更新日期：2026-10-14。依据本仓库工作流提交 `77fb8e1`、示例仓库前四例证据，以及新版受控故障提交 `21a37fd` 的 GitHub Actions / Draft PR 输出。[案例记录](docs/ci-repair-cases.md)列出证据索引；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
 
 ## 1. 项目目标与当前结论
 
 目标是在 mini-SWE-agent 基础上二次开发一个**可复现、可审查、可量化**的 CI 失败自动修复 Agent，用作 AI 应用开发 / Agent 开发实习的项目经历。当前范围固定为：GitHub Actions 中 `main` 分支的 Python `pytest` 失败，自动提出 **Draft PR**，由人审核和合并。暂不扩展到 Jenkins、JUnit 输入、多 Agent 或编译失败。
 
 **当前已完成四条受控端到端链路**：加法、乘法、字符串空白边界及负数乘法故障分别触发失败的 Pytest 工作流；修复工作流在隔离目录复现、调用模型、独立验证、创建 Draft PR。四例的 PR 检查通过后均已人工合并，合并后的 `main` 检查通过。**当前尚不能宣称对一般 CI 失败具有稳定修复率**：案例都来自同一个小型示例仓库，尚无固定评估集或跨项目验证。
+
+新版 Agent `1b291c5ef119cc67b7e155cb741e5b2d19804cc6` 和工作流模板已部署到示例仓库。第五次受控故障 `21a37fda533398d6acbb7fd7b3a78ed0f05b51b9` 已触发失败 CI、通过修复与发布作业并创建 [Draft PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)；PR 的 [Pytest 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)经批准后通过。PR 仍为 Draft，尚未合并。
 
 第一、第二和第四例 PR 的 Pytest 检查最初都出现过 `action_required`，经人工批准后才运行并通过；第三例 PR 检查直接通过。因此已证明**自动创建 PR 与最终检查通过**，不能写成“PR 检查全程无需人工介入”。
 
@@ -16,11 +18,11 @@
 | --- | --- | --- |
 | 仓库代理 | [仓库环境](src/minisweagent/environments/repository.py)提供搜索、读文件、应用补丁、运行测试和结束等工具；[仓库模型](src/minisweagent/models/repository_model.py)负责工具调用；[配置](src/minisweagent/config/repository.yaml)设置 40 步及成本上限。 | 这是本项目相对上游 mini-SWE-agent 的二次开发，应在简历中明确写成“基于 mini-SWE-agent 扩展”。 |
 | 开发环境 | 传入受控示例仓库和故障 SHA 后，相关测试在 WSL 中记录为 `52 passed, 1 warning`；第四例故障提交的容器测试为 `1 failed, 4 passed`，代理补丁后全量为 `5 passed`。固定基础镜像摘要后，示例仓库在隔离测试容器中为 `5 passed`。 | 相关测试不是整个项目测试集；未传在线参数时重复发布测试会跳过。 |
-| CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、可选的 pytest XML、输出目录和运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。 | 优先解析 pytest XML，缺失时回退到文本日志；当前 XML 映射只覆盖可还原文件路径的 pytest 测试节点，示例仓库线上工作流尚未同步新参数。 |
+| CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、可选的 pytest XML、输出目录和运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。新版线上报告的 `input_source` 为 `pytest.xml`。 | 优先解析 pytest XML，缺失时回退到文本日志；当前 XML 映射只覆盖可还原文件路径的 pytest 测试节点。 |
 | 独立验证 | 入口创建 `baseline`、`agent`、`candidate` 三个检出目录；原始 SHA 连续跑两次全量 pytest，要求两次失败节点与原 CI 完全一致；补丁先跑原失败测试再跑全量 pytest；限制变更为 `src/*.py`。 | 两次相同失败只能降低不稳定故障的误报风险，不能证明测试绝对稳定。 |
 | 隔离和权限 | 基线及候选 pytest 在禁网、只读挂载的 Docker 容器中运行；Agent 的 `bash` / `run_tests` 命令在另一个受限容器中执行。Agent 控制进程、模型调用、搜索/读文件和 `apply_patch` 在 GitHub Runner 宿主执行，只修改隔离的 agent 检出目录；[修复工作流模板](examples/ci_repair_demo/.github/workflows/repair.yml)把只读 `repair` 作业与有写权限的 `publish` 作业分开。 | 已实现测试命令隔离、作业权限分离和多类补丁越界负例；尚未完成依赖供应链等系统测试。 |
 | 自动 PR | 失败的 `Pytest` `workflow_run` 触发修复；发布前检查报告状态、运行 ID、SHA、`main` 是否仍指向失败提交、补丁能否应用及修改路径；创建 Draft PR，同一 SHA 的已有 PR 不重复创建。 | 只对示例仓库 `main` 上的 `push` 失败启用；不是通用 GitHub App。 |
-| 结果证据 | `report.json`、两次基线/目标/全量测试日志、`patch.diff` 和 trajectory 作为 Actions artifact 保存；第四例起另外保存 `runtime.json`，记录 Agent SHA、实际运行版本、镜像 ID 与配置。 | artifact 有保留期；轨迹和日志在公开前应检查敏感信息。 |
+| 结果证据 | `report.json`、两次基线/目标/全量测试日志、`patch.diff` 和 trajectory 作为 Actions artifact 保存；第四例起另外保存 `runtime.json`。第五次受控运行已记录 Agent SHA、实际运行版本、镜像 ID、固定基础镜像引用、依赖清单与配置。 | artifact 有保留期；轨迹和日志在公开前应检查敏感信息。 |
 
 ### 四个真实端到端案例
 
@@ -41,7 +43,7 @@
 
 1. 已在 WSL 中确认本仓库与示例仓库工作区干净；Windows Git 通过 WSL UNC 路径曾误报四个“修改”，以 WSL Git 为准。
 2. 保留本地私有原始证据，公开前检查 trajectory 和日志中的敏感信息。加法案例早期未生成 `pytest.xml` 与 `target.log`，不补造历史文件。
-3. 第四例已随 artifact 记录 Agent 检出 SHA、原 CI 与修复镜像的 Python/pytest 实际版本、构建镜像 ID、基础配置与入口参数。后续运行已在本地准备固定基础镜像摘要并记录依赖清单，仍需在线验证；模型服务端具体版本如供应商提供，也应记录。前三例历史缺口标为“未记录”，第四例缺少的基础镜像摘要不能从当前标签倒推。
+3. 第四例已随 artifact 记录 Agent 检出 SHA、原 CI 与修复镜像的 Python/pytest 实际版本、构建镜像 ID、基础配置与入口参数。第五次受控运行已在线记录固定基础镜像摘要和 85 个已安装依赖；模型服务端具体版本如供应商提供，也应记录。前三例历史缺口标为“未记录”，第四例缺少的基础镜像摘要不能从当前标签倒推。
 
 **完成标准**：任何人能根据一张案例记录找到原始失败运行、补丁、验证报告、PR 和 PR 检查；无需依赖聊天记录。
 
@@ -49,14 +51,14 @@
 
 | 任务 | 建议改动位置 | 验收方式 |
 | --- | --- | --- |
-| 结构化失败输入（已实现本地验证） | `src/minisweagent/run/ci_repair.py` | 优先解析现有 `pytest.xml`，缺失时回退文本日志；真实 pytest XML 已验证普通、类方法参数化、导入错误及无失败测试，并用第四例归档 XML 核对节点。示例仓库工作流尚待同步与端到端验证；不要把它描述成支持任意 JUnit 生态。 |
+| 结构化失败输入（已完成线上验证） | `src/minisweagent/run/ci_repair.py` | 优先解析现有 `pytest.xml`，缺失时回退文本日志；真实 pytest XML 已验证普通、类方法参数化、导入错误及无失败测试。第五次受控运行的线上报告以 `pytest.xml` 识别两个失败节点，两次基线与原 CI 一致；不要把它描述成支持任意 JUnit 生态。 |
 | 减少误报（已实现，受控负例通过） | 同上 | 已对原 SHA 跑两次基线并要求失败节点与原 CI 完全一致。一次性临时 Git 仓库的真实 pytest/Docker 运行中，失败节点从 `test_switch[early]` 变为 `test_switch[late]`，入口报告 `unstable`，没有模型调用或补丁；这种时钟案例不放入常规必过测试集。 |
 | 完整失败报告（基础实现） | 同上 | 已记录阶段、原因、耗时与可得的调用数/成本；真实 Docker 负例已验证过期失败日志和基线超时均在调用模型前拒绝并留下报告。Docker/pytest 未产出有效测试结果时归为 `execution_error`，避免误报为未复现。真实临时 Git 仓库已验证原失败测试仍失败与全量回归的候选状态分类；模型异常、补丁不适用、变更越界和候选失败的完整入口报告仍待验证。 |
 | 发布前的负例检查（主要路径已覆盖） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 真实临时 Git 仓库已验证 SHA 不匹配、过期 `main`、修改测试/工作流/依赖文件、无效补丁及软链接/文件模式变更均无法暂存；重复 PR 的在线测试已用第四例故障 SHA 通过。发布作业不能执行候选仓库代码。 |
-| 固定依赖与权限 | 两个工作流、镜像构建 | 第四例实测 Agent SHA 和 pytest 固定版本；真实 Docker 测试已确认宿主进程设置 `GITHUB_TOKEN`、`GH_TOKEN` 和 `DEEPSEEK_API_KEY` 时，测试容器的环境变量中均不可见。已在本地把基础镜像固定到仓库摘要，镜像构建及运行记录步骤均通过，并在工作流模板中要求 40 位 Agent SHA、记录基础镜像引用与已安装依赖。尚待示例仓库同步和新版运行验证；Actions 并发限制仍需处理。 |
+| 固定依赖与权限 | 两个工作流、镜像构建 | 真实 Docker 测试已确认宿主进程设置 `GITHUB_TOKEN`、`GH_TOKEN` 和 `DEEPSEEK_API_KEY` 时，测试容器的环境变量中均不可见。第五次受控运行已在线验证 40 位 Agent SHA `1b291c5`、Python 3.12.15、pytest 9.0.2、基础镜像引用 `python:3.12-slim@sha256:a6e34c5…`、构建镜像 ID 及 85 个依赖记录；Actions 并发限制仍需处理。 |
 | CI 与复现环境一致（已完成主要对齐） | `pytest.yml`、`Dockerfile.repository` | 第四例实测原 CI 与修复镜像均为 Python 3.12.15 和 pytest 9.0.2，并完成 GitHub 端到端验证。 |
-| 工作流本身可维护 | 工作流模板及相应验证 | 把实际演示仓库中的工作流与仓库模板保持同步；配置检查、动作版本升级时重跑一条端到端案例。 |
-| PR 检查的触发条件 | 示例仓库 Actions 设置与 `pytest.yml` | 第一、第二、第四例出现 `action_required`，经人工批准后检查通过；明确记录人工批准步骤和权限设置，不将链路描述为完全无人值守。 |
+| 工作流本身可维护 | 工作流模板及相应验证 | 示例仓库已同步模板并通过健康提交的 Pytest 检查；第五次受控故障的修复、发布及 PR 检查均成功。 |
+| PR 检查的触发条件 | 示例仓库 Actions 设置与 `pytest.yml` | 第一、第二、第四、第五例出现 `action_required`，经批准后检查通过；明确记录批准步骤和权限设置，不将链路描述为完全无人值守。 |
 
 此处只写**有意义的负例和集成验证**。仓库规则要求不要用 mock/patch 模拟外部行为，也不要写仅重复实现细节的平凡测试。可用临时 Git 仓库、真实 pytest 和 Docker 来验证入口边界；PR 创建部分可在受控示例仓库中验证。
 
@@ -84,7 +86,7 @@
 
 ## 4. 推荐的实际开发顺序
 
-1. **保留已完成的新版运行证据。** 第四例的原始 Pytest artifact、修复 artifact、PR diff 与检查结果已归档；[案例记录](docs/ci-repair-cases.md)列出精确版本及历史缺口。基础镜像仓库摘要和模型服务端具体版本仍需在后续运行中补充。
+1. **完成第五次受控运行的收尾。** 原始 [失败 Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38496308852)、[成功修复运行](https://github.com/fuziran/ci-repair-demo/actions/runs/38496330797)、[Draft PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)及经批准通过的 [PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)已有证据，artifact 已归档；审核补丁后人工合并，再归档合并后 `main` 检查。模型服务端具体版本仍未记录。
 2. **下一项代码任务：补剩余入口报告负例。** 发布前的越界补丁本地负例、在线重复 PR 检查、入口过期日志、基线超时及一次受控 `unstable` 案例已覆盖；候选失败状态分类已用真实 Docker 验证，继续核对模型异常、补丁不适用和变更越界的完整入口报告，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。

@@ -1,6 +1,6 @@
 # CI 修复案例记录
 
-更新日期：2026-10-13。本页索引四个受控演示案例的原始运行、修复产物和 PR。原始日志、报告、补丁与 trajectory 保存在个人目录 `$HOME/ci-repair-evidence/`，未提交到本仓库；公开轨迹和日志前需检查敏感信息。四个案例都来自同一个小型示例仓库，不构成通用修复率评估。
+更新日期：2026-10-14。本页索引四个已合并的受控演示案例，以及一个 PR 检查已通过、尚未合并的新版验证。原始日志、报告、补丁与 trajectory 保存在个人目录 `$HOME/ci-repair-evidence/`，未提交到本仓库；公开轨迹和日志前需检查敏感信息。这些案例都来自同一个小型示例仓库，不构成通用修复率评估。
 
 ## 结果与证据位置
 
@@ -10,6 +10,12 @@
 | 乘法 | `9052dc1d4b290b508e089b16fca02ef46c4d6a22`；[Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38348094027) | [运行 38348122879](https://github.com/fuziran/ci-repair-demo/actions/runs/38348122879)，第 2 次尝试成功 | `multiply/original-ci/`、`multiply/repair/`、`multiply/pr.json`、`multiply/pr.diff` | [PR #2](https://github.com/fuziran/ci-repair-demo/pull/2) 已合并；归档的 `pr.json` 显示 `test` 检查成功 | `verified`；补丁后目标 `1 passed`、全量 `3 passed`；5 次模型调用；估算模型成本 $0.00046395；入口耗时 12.01 秒 |
 | 字符串空白 | `6cf07e8d4adcfd34f9dcadd61ea97dd52e8f12a8`；[Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38375617864) | [运行 38375646666](https://github.com/fuziran/ci-repair-demo/actions/runs/38375646666)，第 1 次尝试成功 | `slug-6cf07e8/original-ci/`、`slug-6cf07e8/`、`slug-6cf07e8/pr.json` | [PR #3](https://github.com/fuziran/ci-repair-demo/pull/3) 已合并；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38375927602)与[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38378797950)成功 | `verified`；两次基线失败节点相同；补丁后目标 `1 passed`、全量 `5 passed`；6 次模型调用；估算模型成本 $0.001198908；入口耗时 15.43 秒 |
 | 负数乘法 | `5d40574101704ab79e94c9bd3705baf666883a4a`；[Pytest](https://github.com/fuziran/ci-repair-demo/actions/runs/38410059527) | [运行 38410093457](https://github.com/fuziran/ci-repair-demo/actions/runs/38410093457) 的 `repair`、`publish` 均成功 | `negative-multiply-5d40574/original-ci/`、`negative-multiply-5d40574/repair/`、`negative-multiply-5d40574/pr.json`、`negative-multiply-5d40574/merged-main-run.json` | [PR #4](https://github.com/fuziran/ci-repair-demo/pull/4) 已人工合并为 `47cf4ad02bab1ebd107aa579f7d5c50c9dd2de11`；[PR 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38410495258) 经批准后通过，[合并后 main 检查](https://github.com/fuziran/ci-repair-demo/actions/runs/38412406215)通过 | 两次基线均只在 `test_multiply` 失败；补丁后目标 `1 passed`、全量 `5 passed`；6 次模型调用；估算模型成本 $0.000585756；入口耗时 15.5 秒 |
+
+### 新版受控验证（PR 检查通过，尚未合并）
+
+故障提交 `21a37fda533398d6acbb7fd7b3a78ed0f05b51b9` 将 `slugify` 的小写转换移除；[Pytest 运行 38496308852](https://github.com/fuziran/ci-repair-demo/actions/runs/38496308852)失败。[修复运行 38496330797](https://github.com/fuziran/ci-repair-demo/actions/runs/38496330797)的 `repair` 和 `publish` 作业成功，创建 [Draft PR #5](https://github.com/fuziran/ci-repair-demo/pull/5)。补丁只恢复 `src/slug.py` 的小写转换。PR 的 [Pytest 运行 38496557325](https://github.com/fuziran/ci-repair-demo/actions/runs/38496557325)最初为 `action_required`，经批准后 `test` 检查通过；PR 尚未合并。
+
+`report.json` 记录 `status=verified`、`input_source=pytest.xml`；原 CI 与两次基线均在 `test_slugify_words`、`test_slugify_whitespace` 失败。候选目标测试 `2 passed`、全量 `5 passed`，6 次模型调用，估算模型成本 $0.001189548，入口耗时 14.92 秒。`runtime.json` 记录 Agent SHA `1b291c5ef119cc67b7e155cb741e5b2d19804cc6`、原 CI 与修复镜像的 Python 3.12.15 / pytest 9.0.2、镜像 ID `sha256:74ed78415ca6e95a837c15b9d38dd51013ea43c2f2e00df2c026cedaee3dc1f7`、固定基础镜像引用 `python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1`、85 个安装依赖与配置。原 CI artifact、修复 artifact、PR diff 和运行元数据已归档到 `p1-smoke-21a37fd/`；PR 检查结果已保存，合并后 `main` 检查尚无记录。
 
 本地证据目录均相对于 `$HOME/ci-repair-evidence/`。第三例现已保存原始 `pytest.log`、`pytest.xml`、修复 `report.json`、`patch.diff`、`trajectory.json`、两次基线日志、目标与全量验证日志以及 `pr.json`。加法案例的早期原始 CI artifact 只有 `pytest.log`，修复 artifact 缺少 `target.log`；不能将后续案例的文件补写成早期证据。乘法案例同一运行的不同尝试有不同调用数与费用，上表只采用已归档的成功尝试，不能把重跑计为独立案例。
 
