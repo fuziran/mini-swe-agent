@@ -1,0 +1,393 @@
+{
+  "image_id": "sha256:89cd1a451dfa7bac8d24aedd4f40351ec62bfdef7a6069124a428167dd104e91",
+  "python": "Python 3.12.15",
+  "pytest": "pytest 9.0.2",
+  "cases": [
+    {
+      "case_id": "E01",
+      "bug_sha": "b265023c93e2fc6e2aed0a35cf5fedfabcce344f",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_slugify"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_slugify"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_slugify"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E02",
+      "bug_sha": "cb598afd9870e47a829fc1c0adc6eb592a03b92a",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_parse_quantity"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_parse_quantity"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_parse_quantity"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E03",
+      "bug_sha": "0dd4fb147bc3d5b65f27263227d9068f8a70c2df",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_normalize_name"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_normalize_name"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_normalize_name"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E04",
+      "bug_sha": "9e4b7ac8e681d7874d0e2f4fb7c64db1d9684a0f",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_parse_port"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_parse_port"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_parse_port"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E05",
+      "bug_sha": "bf76b9b6a6b85bdc42aa93ca4eee64aff8463cd0",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_require_user"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_require_user"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_require_user"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E06",
+      "bug_sha": "3ea7d76c4eba4d24d57ffe5d6f1c325ff6ce0601",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_safe_ratio"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_safe_ratio"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_safe_ratio"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E07",
+      "bug_sha": "589ae5002de80e7e57fe5b3bfb8ad1a41592caef",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_page_count"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_page_count"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_page_count"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E08",
+      "bug_sha": "6250e908d5fc13ff5c1b7f95e647229ab48ea8ff",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_is_leap_year"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_is_leap_year"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_is_leap_year"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E09",
+      "bug_sha": "1dae6d1a91c5e9b111a687386daba1494ca8d86d",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_overlaps"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_overlaps"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_overlaps"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E10",
+      "bug_sha": "e7b47aaa3cf37438d2d0e7e45fbadd11209e92db",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_display_name"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_display_name"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_display_name"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E11",
+      "bug_sha": "12aa42846ac1302fa3cf6b182f5d4bf491b024a4",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_invoice_total"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_invoice_total"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_invoice_total"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E12",
+      "bug_sha": "b04533d4da105e0ebb6d06944d1390bffcb38cea",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_can_read"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_can_read"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_can_read"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E13",
+      "bug_sha": "8657a05ffbb511b4e9be6ac4d9250cd6ea1e7d1a",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_clamp"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_clamp"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_clamp"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E14",
+      "bug_sha": "be4d891e59353712e0a45df86fe4a019084193dd",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_stable_unique"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_stable_unique"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_stable_unique"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E15",
+      "bug_sha": "d99d1dd8d743f874a2b7efd7c20160066ceef4bd",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_round_cents"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_round_cents"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_round_cents"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E16",
+      "bug_sha": "40615e107987592ed686dd58a29d703709c5d87c",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_safe_child"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_behavior.py::test_safe_child"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_behavior.py::test_safe_child"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E17",
+      "bug_sha": "b352bcdaf428050075fcb61b29c75939e1ba5bb9",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_behavior.py::test_slugify"
+      ],
+      "baseline_returncode": 0,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [],
+      "baseline_repeat_returncode": 0,
+      "baseline_repeat_failed_nodes": [],
+      "reproduced": false,
+      "matches_design": true
+    },
+    {
+      "case_id": "E18",
+      "bug_sha": "6d2d22a250d7337e589b9f90b1ee1fb70ee824d9",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_environment.py::test_environment_flag"
+      ],
+      "baseline_returncode": 0,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [],
+      "baseline_repeat_returncode": 0,
+      "baseline_repeat_failed_nodes": [],
+      "reproduced": false,
+      "matches_design": true
+    },
+    {
+      "case_id": "E19",
+      "bug_sha": "4d0a9e07cb039ef3c6da14aef4e9a36f922ce233",
+      "original_returncode": 1,
+      "original_collection_error": false,
+      "original_failed_nodes": [
+        "tests/test_incorrect_expectation.py::test_incorrect_expectation"
+      ],
+      "baseline_returncode": 1,
+      "baseline_collection_error": false,
+      "baseline_failed_nodes": [
+        "tests/test_incorrect_expectation.py::test_incorrect_expectation"
+      ],
+      "baseline_repeat_returncode": 1,
+      "baseline_repeat_failed_nodes": [
+        "tests/test_incorrect_expectation.py::test_incorrect_expectation"
+      ],
+      "reproduced": true,
+      "matches_design": true
+    },
+    {
+      "case_id": "E20",
+      "bug_sha": "ac9f057a8ba376e3a609448f4c6e86b1493bf8e1",
+      "original_returncode": 2,
+      "original_collection_error": true,
+      "original_failed_nodes": [],
+      "baseline_returncode": 2,
+      "baseline_collection_error": true,
+      "baseline_failed_nodes": [],
+      "baseline_repeat_returncode": 2,
+      "baseline_repeat_failed_nodes": [],
+      "reproduced": false,
+      "matches_design": true
+    }
+  ]
+}
