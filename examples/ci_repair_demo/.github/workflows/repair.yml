@@ -41,7 +41,7 @@ jobs:
           AGENT_REF: ${{ vars.AGENT_REF }}
         run: |
           test -n "$AGENT_REPO"
-          test -n "$AGENT_REF"
+          [[ "$AGENT_REF" =~ ^[0-9a-f]{40}$ ]]
           git clone --quiet "https://github.com/$AGENT_REPO.git" "$RUNNER_TEMP/agent"
           git -C "$RUNNER_TEMP/agent" fetch --quiet origin "$AGENT_REF"
           git -C "$RUNNER_TEMP/agent" checkout --quiet --detach FETCH_HEAD
@@ -79,6 +79,9 @@ jobs:
                   "id": output("docker", "image", "inspect", image, "--format", "{{.Id}}"),
                   "python": output("docker", "run", "--rm", "--network", "none", image, "python", "--version"),
                   "pytest": output("docker", "run", "--rm", "--network", "none", image, "python", "-m", "pytest", "--version"),
+                  "base_image": (agent / "Dockerfile.repository").read_text().splitlines()[0].split(maxsplit=1)[1],
+                  "packages": output("docker", "run", "--rm", "--network", "none", image,
+                                     "python", "-m", "pip", "freeze").splitlines(),
                   "dockerfile_sha256": hashlib.sha256((agent / "Dockerfile.repository").read_bytes()).hexdigest(),
               },
               "base_config": yaml.safe_load((agent / "src/minisweagent/config/repository.yaml").read_text()),
