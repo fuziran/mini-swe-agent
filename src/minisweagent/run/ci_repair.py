@@ -27,20 +27,66 @@ def _git(root: Path, *args: str, input: str | None = None) -> str:
     ).stdout.strip()
 
 
-def _test(root: Path, image: str, timeout: int, tests: list[str] | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [
-            "docker", "run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp",
-            "--cpus", "2", "--memory", "2g", "-e", "PYTHONDONTWRITEBYTECODE=1",
-            "--mount", f"type=bind,source={root},target=/workspace,readonly", "-w", "/workspace",
-            image, "python", "-m", "pytest", "-q", "--color=no", "-p", "no:cacheprovider", *(tests or []),
-        ],
-        text=True, capture_output=True, timeout=timeout,
-    )
+def _test(
+    root: Path, image: str, timeout: int, tests: list[str] | None = None, xml: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    if xml is not None:
+        xml.unlink(missing_ok=True)
+    with TemporaryDirectory(prefix="mini-ci-pytest-") as results:
+        result = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--read-only",
+                "--tmpfs",
+                "/tmp",
+                "--cpus",
+                "2",
+                "--memory",
+                "2g",
+                "-e",
+                "PYTHONDONTWRITEBYTECODE=1",
+                "--mount",
+                f"type=bind,source={root},target=/workspace,readonly",
+                *(["--mount", f"type=bind,source={results},target=/results"] if xml is not None else []),
+                "-w",
+                "/workspace",
+                image,
+                "python",
+                "-m",
+                "pytest",
+                "-q",
+                "--color=no",
+                "-p",
+                "no:cacheprovider",
+                *(["--junitxml=/results/pytest.xml"] if xml is not None else []),
+                *(tests or []),
+            ],
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        generated = Path(results) / "pytest.xml"
+        if xml is not None and generated.is_file() and not generated.is_symlink():
+            xml.write_bytes(generated.read_bytes())
+        return result
 
 
 def _failed_tests(output: str) -> set[str]:
     return set(FAILED_TEST.findall(output))
+
+
+def _node_id(case: ElementTree.Element) -> str:
+    parts = case.attrib.get("classname", "").split(".")
+    modules = [index for index, part in enumerate(parts) if part.startswith("test_") or part.endswith("_test")]
+    name = case.attrib.get("name", "")
+    if not modules or not name.startswith("test_"):
+        raise ValueError("Cannot map pytest XML testcase to a test node")
+    index = modules[-1]
+    return f"{'/'.join(parts[: index + 1])}.py::{'::'.join((*parts[index + 1 :], name))}"
 
 
 def _xml_failures(path: Path) -> tuple[set[str], bool]:
@@ -53,30 +99,47 @@ def _xml_failures(path: Path) -> tuple[set[str], bool]:
         errors |= case.find("error") is not None
         if case.find("failure") is None:
             continue
-        parts = case.attrib.get("classname", "").split(".")
-        modules = [index for index, part in enumerate(parts) if part.startswith("test_") or part.endswith("_test")]
-        name = case.attrib.get("name", "")
-        if not modules or not name.startswith("test_"):
-            raise ValueError("Cannot map pytest XML failure to a test node")
-        index = modules[-1]
-        failures.add(f"{'/'.join(parts[:index + 1])}.py::{'::'.join((*parts[index + 1:], name))}")
+        failures.add(_node_id(case))
     return failures, errors
 
 
-def _matches_failures(result: subprocess.CompletedProcess[str], expected: set[str]) -> bool:
-    return result.returncode == 1 and _failed_tests(result.stdout + result.stderr) == expected
+def _xml_results(path: Path, returncode: int) -> dict[str, str]:
+    root = ElementTree.parse(path).getroot()
+    if root.tag not in {"testsuites", "testsuite"}:
+        raise ValueError("Expected pytest testsuites or testsuite XML")
+    results = {}
+    for case in root.iter("testcase"):
+        node = _node_id(case)
+        statuses = [
+            status
+            for tag, status in (("failure", "failed"), ("error", "error"), ("skipped", "skipped"))
+            if case.find(tag) is not None
+        ]
+        if node in results or len(statuses) > 1:
+            raise ValueError("Duplicate or conflicting pytest XML testcase")
+        results[node] = statuses[0] if statuses else "passed"
+    if (
+        not results
+        or returncode not in {0, 1}
+        or "error" in results.values()
+        or (any(status == "failed" for status in results.values()) != (returncode == 1))
+    ):
+        raise ValueError("Pytest XML outcomes do not match the test run")
+    return results
 
 
-def _execution_error(result: subprocess.CompletedProcess[str]) -> bool:
-    return result.returncode not in {0, 1} or (
-        result.returncode == 1 and not _failed_tests(result.stdout + result.stderr)
-    )
+def _target_passed(results: dict[str, str], failures: set[str]) -> bool:
+    return results == dict.fromkeys(failures, "passed")
 
 
-def _test_status(result: subprocess.CompletedProcess[str], failed_status: str) -> str | None:
-    if _execution_error(result):
-        return "execution_error"
-    return failed_status if result.returncode else None
+def _candidate_issue(baseline: dict[str, str], candidate: dict[str, str], failures: set[str]) -> str | None:
+    if baseline.keys() != candidate.keys():
+        return "Full pytest suite changed collected test nodes"
+    if any(status == "skipped" and baseline[node] != "skipped" for node, status in candidate.items()):
+        return "Full pytest suite introduced skipped tests"
+    if any(candidate[node] != "passed" for node in failures):
+        return "Original failing tests did not pass in the full suite"
+    return None
 
 
 def _allowed_changes(root: Path) -> list[str]:
@@ -88,13 +151,47 @@ def _allowed_changes(root: Path) -> list[str]:
     for metadata, path in zip(entries[::2], entries[1::2]):
         fields = metadata.split()
         if (
-            len(fields) != 5 or fields[-1] != "M"
-            or fields[0][1:] != fields[1] or fields[1] not in {"100644", "100755"}
-            or not path.startswith("src/") or not path.endswith(".py")
+            len(fields) != 5
+            or fields[-1] != "M"
+            or fields[0][1:] != fields[1]
+            or fields[1] not in {"100644", "100755"}
+            or not path.startswith("src/")
+            or not path.endswith(".py")
         ):
             return []
         paths.append(path)
     return paths
+
+
+def _record_exception(report: dict[str, Any], stage: str, exc: Exception) -> None:
+    report.update(
+        status={"input": "invalid_input", "checkout": "checkout_error", "apply_patch": "patch_error"}.get(
+            stage, "agent_error" if stage.startswith("agent") else "execution_error"
+        ),
+        failed_stage=stage,
+        reason={
+            "input": "Could not read or validate the input",
+            "checkout": "Could not create the validation checkouts",
+            "baseline": "Could not validate the first baseline test run",
+            "baseline_repeat": "Could not validate the repeated baseline test run",
+            "agent_setup": "Could not initialize the agent or model",
+            "agent": "Agent or model execution failed",
+            "changes": "Could not inspect the agent changes",
+            "apply_patch": "Could not apply the patch to the candidate checkout",
+            "target": "Could not validate the original failing tests",
+            "candidate": "Could not validate the full pytest suite",
+        }[stage],
+        error_type=type(exc).__name__,
+    )
+
+
+def _apply_candidate_patch(root: Path, patch: str, report: dict[str, Any]) -> None:
+    try:
+        _git(root, "apply", "--check", "-", input=patch)
+        _git(root, "apply", "-", input=patch)
+    except subprocess.CalledProcessError as exc:
+        _record_exception(report, "apply_patch", exc)
+        raise
 
 
 @app.command()
@@ -107,12 +204,15 @@ def main(
     xml: Path | None = typer.Option(None, help="Pytest XML from the failed workflow, when available."),
     output: Path = typer.Option(..., help="Directory for patch, logs, report, and trajectory."),
     model: str | None = typer.Option(None, help="Model name; otherwise use MSWEA_MODEL_NAME."),
+    config_file: Path | None = typer.Option(
+        None, "--config", help="Agent configuration; otherwise use repository.yaml."
+    ),
     image: str = typer.Option("mini-swe-agent-repository:latest", help="Prebuilt test and agent image."),
     timeout: int = typer.Option(600, help="Seconds allowed for each test run and the agent."),
 ) -> None:
     started = time.monotonic()
     output.mkdir(parents=True, exist_ok=True)
-    report: dict[str, Any] = {"workflow": workflow, "sha": sha}
+    report: dict[str, Any] = {"workflow": workflow, "sha": sha, "model_calls": 0, "model_cost": 0.0}
     if run_id is not None:
         report["run_id"] = run_id
     stage = "input"
@@ -120,6 +220,18 @@ def main(
     def reject(status: str, reason: str) -> str:
         report.update(reason=reason, failed_stage=stage)
         return status
+
+    def record(name: str, result: subprocess.CompletedProcess[str]) -> dict[str, str]:
+        report[f"{name}_returncode"] = result.returncode
+        outcomes = _xml_results(output / f"{name}.xml", result.returncode)
+        report.update(
+            {
+                f"{name}_node_count": len(outcomes),
+                f"{name}_failures": sorted(node for node, status in outcomes.items() if status == "failed"),
+                f"{name}_skipped": sorted(node for node, status in outcomes.items() if status == "skipped"),
+            }
+        )
+        return outcomes
 
     def repair() -> str:
         nonlocal stage
@@ -131,7 +243,8 @@ def main(
         xml_path = xml if xml is not None and xml.is_file() else None
         report["input_source"] = "pytest.xml" if xml_path is not None else "pytest.log"
         incoming_failures, errors = (
-            _xml_failures(xml_path) if xml_path is not None
+            _xml_failures(xml_path)
+            if xml_path is not None
             else (_failed_tests(original_log), bool(COLLECTION_ERROR.search(original_log)))
         )
         report["incoming_failures"] = sorted(incoming_failures)
@@ -148,41 +261,32 @@ def main(
                 _git(root, "checkout", "--detach", sha)
 
             stage = "baseline"
-            baseline = _test(roots["baseline"], image, timeout)
-            baseline_output = baseline.stdout + baseline.stderr
-            (output / "baseline.log").write_text(baseline_output)
-            report.update(
-                baseline_failures=sorted(_failed_tests(baseline_output)), baseline_returncode=baseline.returncode
-            )
-            if _execution_error(baseline):
-                return reject("execution_error", "First baseline produced no valid pytest result")
-            if not _matches_failures(baseline, incoming_failures):
+            baseline = _test(roots["baseline"], image, timeout, xml=output / "baseline.xml")
+            (output / "baseline.log").write_text(baseline.stdout + baseline.stderr)
+            baseline_results = record("baseline", baseline)
+            if baseline.returncode != 1 or set(report["baseline_failures"]) != incoming_failures:
                 return reject("not_reproduced", "First baseline differs from the original pytest failures")
 
             stage = "baseline_repeat"
-            repeat = _test(roots["baseline"], image, timeout)
-            repeat_output = repeat.stdout + repeat.stderr
-            (output / "baseline_repeat.log").write_text(repeat_output)
-            report.update(
-                baseline_repeat_failures=sorted(_failed_tests(repeat_output)), baseline_repeat_returncode=repeat.returncode
-            )
-            if _execution_error(repeat):
-                return reject("execution_error", "Repeated baseline produced no valid pytest result")
-            if not _matches_failures(repeat, incoming_failures):
-                return reject("unstable", "Repeated baseline does not fail on the same pytest nodes")
+            repeat = _test(roots["baseline"], image, timeout, xml=output / "baseline_repeat.xml")
+            (output / "baseline_repeat.log").write_text(repeat.stdout + repeat.stderr)
+            if record("baseline_repeat", repeat) != baseline_results:
+                return reject("unstable", "Repeated baseline changed pytest node outcomes")
 
             stage = "agent_setup"
-            config = get_config_from_spec("repository.yaml")
-            config["environment"].update(root=roots["agent"], image=image)
-            config["agent"].update(
-                mode="yolo", confirm_exit=False, wall_time_limit_seconds=timeout,
+            settings = get_config_from_spec(config_file or "repository.yaml")
+            settings["environment"].update(root=roots["agent"], image=image)
+            settings["agent"].update(
+                mode="yolo",
+                confirm_exit=False,
+                wall_time_limit_seconds=timeout,
                 output_path=output / "trajectory.json",
             )
             if model:
-                config["model"]["model_name"] = model
-            environment = get_environment(config["environment"])
+                settings["model"]["model_name"] = model
+            environment = get_environment(settings["environment"])
             try:
-                agent = get_agent(get_model(config=config["model"]), environment, config["agent"])
+                agent = get_agent(get_model(config=settings["model"]), environment, settings["agent"])
                 stage = "agent"
                 try:
                     result = agent.run(
@@ -207,28 +311,32 @@ def main(
             patch = _git(roots["agent"], "diff", "HEAD", "--binary", "--no-ext-diff") + "\n"
             (output / "patch.diff").write_text(patch)
             stage = "apply_patch"
-            _git(roots["candidate"], "apply", "--check", "-", input=patch)
-            _git(roots["candidate"], "apply", "-", input=patch)
+            _apply_candidate_patch(roots["candidate"], patch, report)
 
             stage = "target"
-            target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
+            target = _test(roots["candidate"], image, timeout, report["baseline_failures"], output / "target.xml")
             (output / "target.log").write_text(target.stdout + target.stderr)
-            if status := _test_status(target, "target_failed"):
-                return reject(
-                    status,
-                    "Original failing tests produced no valid pytest result" if status == "execution_error"
-                    else "Original failing tests still fail after the patch",
-                )
+            target_results = record("target", target)
+            if target.returncode or not _target_passed(target_results, incoming_failures):
+                return reject("target_failed", "Original failing tests did not all pass after the patch")
 
             stage = "candidate"
-            candidate = _test(roots["candidate"], image, timeout)
+            candidate = _test(roots["candidate"], image, timeout, xml=output / "candidate.xml")
             (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)
-            if status := _test_status(candidate, "candidate_failed"):
-                return reject(
-                    status,
-                    "Full pytest suite produced no valid pytest result" if status == "execution_error"
-                    else "Full pytest suite fails after the patch",
-                )
+            candidate_results = record("candidate", candidate)
+            report.update(
+                candidate_added_nodes=sorted(candidate_results.keys() - baseline_results.keys()),
+                candidate_missing_nodes=sorted(baseline_results.keys() - candidate_results.keys()),
+                candidate_new_skipped=sorted(
+                    node
+                    for node, status in candidate_results.items()
+                    if status == "skipped" and baseline_results.get(node) != "skipped"
+                ),
+            )
+            if candidate.returncode:
+                return reject("candidate_failed", "Full pytest suite fails after the patch")
+            if issue := _candidate_issue(baseline_results, candidate_results, incoming_failures):
+                return reject("candidate_failed", issue)
             return "verified"
 
     try:
@@ -236,13 +344,8 @@ def main(
     except subprocess.TimeoutExpired as exc:
         report.update(status="timeout", failed_stage=stage, reason=f"{stage} exceeded {exc.timeout} seconds")
     except Exception as exc:
-        report.update(
-            status={"input": "invalid_input", "checkout": "checkout_error", "apply_patch": "patch_error"}.get(
-                stage, "agent_error" if stage.startswith("agent") else "execution_error"
-            ),
-            failed_stage=stage,
-            error_type=type(exc).__name__,
-        )
+        if "status" not in report:
+            _record_exception(report, stage, exc)
         raise
     finally:
         report["duration_seconds"] = round(time.monotonic() - started, 2)
