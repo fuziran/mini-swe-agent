@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+from xml.etree import ElementTree
 
 import typer
 
@@ -17,6 +18,7 @@ from minisweagent.models import get_model
 
 app = typer.Typer()
 FAILED_TEST = re.compile(r"(?m)^FAILED (\S+::\S+)")
+COLLECTION_ERROR = re.compile(r"(?m)^(?:ERROR collecting |ImportError:|ModuleNotFoundError:)")
 
 
 def _git(root: Path, *args: str, input: str | None = None) -> str:
@@ -39,6 +41,26 @@ def _test(root: Path, image: str, timeout: int, tests: list[str] | None = None) 
 
 def _failed_tests(output: str) -> set[str]:
     return set(FAILED_TEST.findall(output))
+
+
+def _xml_failures(path: Path) -> tuple[set[str], bool]:
+    root = ElementTree.parse(path).getroot()
+    if root.tag not in {"testsuites", "testsuite"}:
+        raise ValueError("Expected pytest testsuites or testsuite XML")
+    failures: set[str] = set()
+    errors = False
+    for case in root.iter("testcase"):
+        errors |= case.find("error") is not None
+        if case.find("failure") is None:
+            continue
+        parts = case.attrib.get("classname", "").split(".")
+        modules = [index for index, part in enumerate(parts) if part.startswith("test_") or part.endswith("_test")]
+        name = case.attrib.get("name", "")
+        if not modules or not name.startswith("test_"):
+            raise ValueError("Cannot map pytest XML failure to a test node")
+        index = modules[-1]
+        failures.add(f"{'/'.join(parts[:index + 1])}.py::{'::'.join((*parts[index + 1:], name))}")
+    return failures, errors
 
 
 def _matches_failures(result: subprocess.CompletedProcess[str], expected: set[str]) -> bool:
@@ -70,6 +92,7 @@ def main(
     run_id: int | None = typer.Option(None, help="GitHub Actions run ID of the failed workflow."),
     sha: str = typer.Option(..., help="Full SHA of the failed commit."),
     log: Path = typer.Option(..., help="Raw pytest log from the failed workflow."),
+    xml: Path | None = typer.Option(None, help="Pytest XML from the failed workflow, when available."),
     output: Path = typer.Option(..., help="Directory for patch, logs, report, and trajectory."),
     model: str | None = typer.Option(None, help="Model name; otherwise use MSWEA_MODEL_NAME."),
     image: str = typer.Option("mini-swe-agent-repository:latest", help="Prebuilt test and agent image."),
@@ -93,10 +116,17 @@ def main(
         if workflow != "Pytest" or not re.fullmatch(r"[0-9a-f]{40}", sha) or _git(repo, "rev-parse", "HEAD") != sha:
             return reject("invalid_input", "Expected the Pytest workflow and its exact 40-character commit SHA")
         original_log = log.read_text(errors="replace")
-        incoming_failures = _failed_tests(original_log)
+        xml_path = xml if xml is not None and xml.is_file() else None
+        report["input_source"] = "pytest.xml" if xml_path is not None else "pytest.log"
+        incoming_failures, errors = (
+            _xml_failures(xml_path) if xml_path is not None
+            else (_failed_tests(original_log), bool(COLLECTION_ERROR.search(original_log)))
+        )
         report["incoming_failures"] = sorted(incoming_failures)
+        if errors:
+            return reject("pytest_error", "Original CI failed during pytest collection or setup")
         if not incoming_failures:
-            return reject("not_pytest_failure", "Original CI log has no failed pytest node IDs")
+            return reject("not_pytest_failure", "Original CI artifact has no failed pytest node IDs")
 
         with TemporaryDirectory(prefix="mini-ci-repair-") as temp:
             stage = "checkout"
