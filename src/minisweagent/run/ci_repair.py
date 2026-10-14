@@ -67,6 +67,12 @@ def _matches_failures(result: subprocess.CompletedProcess[str], expected: set[st
     return result.returncode == 1 and _failed_tests(result.stdout + result.stderr) == expected
 
 
+def _execution_error(result: subprocess.CompletedProcess[str]) -> bool:
+    return result.returncode not in {0, 1} or (
+        result.returncode == 1 and not _failed_tests(result.stdout + result.stderr)
+    )
+
+
 def _allowed_changes(root: Path) -> list[str]:
     entries = _git(root, "diff", "HEAD", "--raw", "--no-renames", "-z").split("\0")
     entries.pop()
@@ -142,8 +148,8 @@ def main(
             report.update(
                 baseline_failures=sorted(_failed_tests(baseline_output)), baseline_returncode=baseline.returncode
             )
-            if baseline.returncode >= 125:
-                return reject("execution_error", "Docker could not run the first baseline")
+            if _execution_error(baseline):
+                return reject("execution_error", "First baseline produced no valid pytest result")
             if not _matches_failures(baseline, incoming_failures):
                 return reject("not_reproduced", "First baseline differs from the original pytest failures")
 
@@ -154,8 +160,8 @@ def main(
             report.update(
                 baseline_repeat_failures=sorted(_failed_tests(repeat_output)), baseline_repeat_returncode=repeat.returncode
             )
-            if repeat.returncode >= 125:
-                return reject("execution_error", "Docker could not run the repeated baseline")
+            if _execution_error(repeat):
+                return reject("execution_error", "Repeated baseline produced no valid pytest result")
             if not _matches_failures(repeat, incoming_failures):
                 return reject("unstable", "Repeated baseline does not fail on the same pytest nodes")
 
@@ -201,16 +207,16 @@ def main(
             stage = "target"
             target = _test(roots["candidate"], image, timeout, report["baseline_failures"])
             (output / "target.log").write_text(target.stdout + target.stderr)
-            if target.returncode >= 125:
-                return reject("execution_error", "Docker could not run the original failing tests")
+            if _execution_error(target):
+                return reject("execution_error", "Original failing tests produced no valid pytest result")
             if target.returncode:
                 return reject("target_failed", "Original failing tests still fail after the patch")
 
             stage = "candidate"
             candidate = _test(roots["candidate"], image, timeout)
             (output / "candidate.log").write_text(candidate.stdout + candidate.stderr)
-            if candidate.returncode >= 125:
-                return reject("execution_error", "Docker could not run the full pytest suite")
+            if _execution_error(candidate):
+                return reject("execution_error", "Full pytest suite produced no valid pytest result")
             if candidate.returncode:
                 return reject("candidate_failed", "Full pytest suite fails after the patch")
             return "verified"

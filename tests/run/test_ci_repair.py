@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -7,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from minisweagent.run.ci_repair import _matches_failures, app
+from minisweagent.run.ci_repair import _execution_error, _matches_failures, app
 
 
 def _git_repo(tmp_path: Path, test: str | None = None) -> tuple[Path, str]:
@@ -58,6 +59,20 @@ def test_matches_only_the_original_pytest_failures(returncode: int, output: str,
 
 
 @pytest.mark.parametrize(
+    ("returncode", "output", "error"),
+    [
+        (0, "1 passed\n", False),
+        (1, "FAILED tests/test_calc.py::test_add - assert 1 == 2\n", False),
+        (1, "Docker Desktop is unavailable\n", True),
+        (2, "ERROR collecting tests/test_calc.py\n", True),
+        (125, "docker: invalid reference format\n", True),
+    ],
+)
+def test_execution_error_requires_a_valid_pytest_result(returncode: int, output: str, error: bool) -> None:
+    assert _execution_error(subprocess.CompletedProcess([], returncode, output, "")) is error
+
+
+@pytest.mark.parametrize(
     ("workflow", "ci_log", "status"),
     [
         ("Other", "FAILED tests/test_calc.py::test_add - assert 1 == 2\n", "invalid_input"),
@@ -102,7 +117,7 @@ def test_docker_failure_is_not_a_pytest_failure(tmp_path: Path) -> None:
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "execution_error"
     assert report["failed_stage"] == "baseline"
-    assert report["baseline_returncode"] == 125
+    assert report["baseline_returncode"] != 0
     assert (output / "baseline.log").read_text()
     assert not (output / "trajectory.json").exists()
 
@@ -258,3 +273,25 @@ def test_baseline_timeout_writes_report_without_model_call(tmp_path: Path) -> No
     assert report["duration_seconds"] >= 1
     assert not (output / "trajectory.json").exists()
     assert not (output / "patch.diff").exists()
+
+
+@pytest.mark.skipif(not _has_test_image(), reason="Repository test image is unavailable")
+def test_host_credentials_do_not_enter_pytest_container(tmp_path: Path) -> None:
+    repo, _ = _git_repo(
+        tmp_path,
+        "import os\n\ndef test_no_credentials():\n"
+        "    assert not {'GITHUB_TOKEN', 'GH_TOKEN', 'DEEPSEEK_API_KEY'} & os.environ.keys()\n",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable, "-c",
+            "import sys; from pathlib import Path; from minisweagent.run.ci_repair import _test; "
+            "sys.exit(_test(Path(sys.argv[1]), 'mini-swe-agent-repository:latest', 60).returncode)",
+            str(repo),
+        ],
+        env={**os.environ, "GITHUB_TOKEN": "sentinel", "GH_TOKEN": "sentinel", "DEEPSEEK_API_KEY": "sentinel"},
+        capture_output=True, text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
