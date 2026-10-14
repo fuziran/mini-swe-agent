@@ -1,6 +1,6 @@
 # CI 失败自动修复 Agent：现状、差距与后续开发路线
 
-> 更新日期：2026-10-13。依据本仓库工作流提交 `77fb8e1`、示例仓库故障提交 `5d40574` 与合并提交 `47cf4ad`、本地归档证据及 GitHub Actions / PR 输出。四例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
+> 更新日期：2026-10-14。依据本仓库工作流提交 `77fb8e1`、示例仓库故障提交 `5d40574` 与合并提交 `47cf4ad`、本地归档证据及 GitHub Actions / PR 输出。四例的证据索引和版本记录见 [案例记录](docs/ci-repair-cases.md)；后续状态仍以 GitHub 和 WSL Git 的实时结果为准。
 
 ## 1. 项目目标与当前结论
 
@@ -15,8 +15,8 @@
 | 能力 | 当前实现 / 证据 | 边界 |
 | --- | --- | --- |
 | 仓库代理 | [仓库环境](src/minisweagent/environments/repository.py)提供搜索、读文件、应用补丁、运行测试和结束等工具；[仓库模型](src/minisweagent/models/repository_model.py)负责工具调用；[配置](src/minisweagent/config/repository.yaml)设置 40 步及成本上限。 | 这是本项目相对上游 mini-SWE-agent 的二次开发，应在简历中明确写成“基于 mini-SWE-agent 扩展”。 |
-| 开发环境 | 当前相关测试在 WSL 中记录为 `36 passed, 1 skipped, 1 warning`；第四例故障提交的容器测试为 `1 failed, 4 passed`，代理补丁后全量为 `5 passed`。 | 相关测试不是整个项目测试集；跳过的是需要在线 PR 参数的重复发布测试。 |
-| CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、输出目录和可选运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。 | 目前仅识别文本日志中的 `FAILED ...::...`，没有解析 `pytest.xml`。 |
+| 开发环境 | 传入受控示例仓库和故障 SHA 后，相关测试在 WSL 中记录为 `45 passed, 1 warning`；第四例故障提交的容器测试为 `1 failed, 4 passed`，代理补丁后全量为 `5 passed`。 | 相关测试不是整个项目测试集；未传在线参数时重复发布测试会跳过。 |
+| CI 入口 | [ci_repair.py](src/minisweagent/run/ci_repair.py)接收仓库、工作流名、SHA、日志、可选的 pytest XML、输出目录和运行 ID；[pyproject.toml](pyproject.toml)注册 `mini-ci-repair`。 | 优先解析 pytest XML，缺失时回退到文本日志；当前 XML 映射只覆盖可还原文件路径的 pytest 测试节点，示例仓库线上工作流尚未同步新参数。 |
 | 独立验证 | 入口创建 `baseline`、`agent`、`candidate` 三个检出目录；原始 SHA 连续跑两次全量 pytest，要求两次失败节点与原 CI 完全一致；补丁先跑原失败测试再跑全量 pytest；限制变更为 `src/*.py`。 | 两次相同失败只能降低不稳定故障的误报风险，不能证明测试绝对稳定。 |
 | 隔离和权限 | 基线及候选 pytest 在禁网、只读挂载的 Docker 容器中运行；Agent 的 `bash` / `run_tests` 命令在另一个受限容器中执行。Agent 控制进程、模型调用、搜索/读文件和 `apply_patch` 在 GitHub Runner 宿主执行，只修改隔离的 agent 检出目录；[修复工作流模板](examples/ci_repair_demo/.github/workflows/repair.yml)把只读 `repair` 作业与有写权限的 `publish` 作业分开。 | 已实现测试命令隔离、作业权限分离和多类补丁越界负例；尚未完成依赖供应链等系统测试。 |
 | 自动 PR | 失败的 `Pytest` `workflow_run` 触发修复；发布前检查报告状态、运行 ID、SHA、`main` 是否仍指向失败提交、补丁能否应用及修改路径；创建 Draft PR，同一 SHA 的已有 PR 不重复创建。 | 只对示例仓库 `main` 上的 `push` 失败启用；不是通用 GitHub App。 |
@@ -49,10 +49,10 @@
 
 | 任务 | 建议改动位置 | 验收方式 |
 | --- | --- | --- |
-| 结构化失败输入 | `src/minisweagent/run/ci_repair.py` | 优先解析现有 `pytest.xml` 或保留文本日志兼容；区分“无 pytest 失败”“pytest 启动/依赖失败”“可重现断言/异常失败”。不要把 `pytest.xml` 输入误写成支持任意 JUnit 生态。 |
+| 结构化失败输入（已实现本地验证） | `src/minisweagent/run/ci_repair.py` | 优先解析现有 `pytest.xml`，缺失时回退文本日志；真实 pytest XML 已验证普通、类方法参数化、导入错误及无失败测试，并用第四例归档 XML 核对节点。示例仓库工作流尚待同步与端到端验证；不要把它描述成支持任意 JUnit 生态。 |
 | 减少误报（已实现，待补负例） | 同上 | 已对原 SHA 跑两次基线并要求失败节点与原 CI 完全一致；节点变化标记 `unstable`，不调用模型、不创建 PR。下一步用真实临时仓库验证拒绝路径。 |
-| 完整失败报告（基础实现） | 同上 | 已记录阶段、原因、耗时与可得的调用数/成本，并处理超时与执行异常；继续用真实失败场景验证模型异常、补丁不适用、测试失败和变更越界的报告。 |
-| 发布前的负例检查（主要路径已覆盖） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 真实临时 Git 仓库已验证 SHA 不匹配、过期 `main`、修改测试/工作流/依赖文件、无效补丁及软链接/文件模式变更均无法暂存；重复 PR 的在线测试仍需独立运行。发布作业不能执行候选仓库代码。 |
+| 完整失败报告（基础实现） | 同上 | 已记录阶段、原因、耗时与可得的调用数/成本；真实 Docker 负例已验证过期失败日志和基线超时均在调用模型前拒绝并留下报告。继续验证模型异常、补丁不适用、候选测试失败和变更越界的入口报告。 |
+| 发布前的负例检查（主要路径已覆盖） | `examples/ci_repair_demo/.github/workflows/repair.yml` | 真实临时 Git 仓库已验证 SHA 不匹配、过期 `main`、修改测试/工作流/依赖文件、无效补丁及软链接/文件模式变更均无法暂存；重复 PR 的在线测试已用第四例故障 SHA 通过。发布作业不能执行候选仓库代码。 |
 | 固定依赖与权限 | 两个工作流、镜像构建 | 第四例实测 Agent SHA 和 pytest 固定版本；继续记录基础镜像摘要、关键依赖，确认测试容器中没有 PR 写凭据和模型密钥，限制 Actions 权限及并发/成本预算。 |
 | CI 与复现环境一致（已完成主要对齐） | `pytest.yml`、`Dockerfile.repository` | 第四例实测原 CI 与修复镜像均为 Python 3.12.15 和 pytest 9.0.2，并完成 GitHub 端到端验证。 |
 | 工作流本身可维护 | 工作流模板及相应验证 | 把实际演示仓库中的工作流与仓库模板保持同步；配置检查、动作版本升级时重跑一条端到端案例。 |
@@ -85,7 +85,7 @@
 ## 4. 推荐的实际开发顺序
 
 1. **保留已完成的新版运行证据。** 第四例的原始 Pytest artifact、修复 artifact、PR diff 与检查结果已归档；[案例记录](docs/ci-repair-cases.md)列出精确版本及历史缺口。基础镜像仓库摘要和模型服务端具体版本仍需在后续运行中补充。
-2. **下一项代码任务：补剩余拒绝路径。** 发布前的越界补丁本地负例已覆盖；继续验证在线重复 PR，以及入口 `unstable`、候选失败、超时等关键负例，不使用 mock/patch。
+2. **下一项代码任务：补剩余拒绝路径。** 发布前的越界补丁本地负例、在线重复 PR 检查、入口过期日志及基线超时已覆盖；继续验证入口 `unstable`、候选失败等关键负例，不使用 mock/patch。
 3. **冻结 20 例并批量评估。** 先写案例表和判定规则，再跑模型；逐例保留失败证据并汇总指标。
 4. **最后整理展示材料。** 制作架构说明、复现步骤、成功与拒绝案例演示及带分母的评估表。
 
