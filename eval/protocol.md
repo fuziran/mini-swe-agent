@@ -48,3 +48,12 @@ cmp eval/cases.jsonl /tmp/ci-repair-cases-rebuilt.jsonl
 ```
 
 上述命令只生成并验证案例，不调用修复模型。`eval/validation.json` 是本次冻结时的验证摘要，逐例原始日志/XML 保留在本地忽略目录中。后续批量评估须保留原始证据和带分母的汇总表，才能声称 P2 完成。
+
+`run_batch.py prepare` 在模型调用前核对 20 个根提交、原始 XML、镜像 ID、密钥是否已配置，并复制输入，生成包含 SHA256 校验值的 `plan.json`。`execute` 按清单顺序处理未完成案例；每例写入尝试标记与 `result.json`，已有结果不会重跑。可用 `--limit` 将同一批次分段执行，但不得改变案例顺序或单例配置。`verified` 案例的 `valid_fix` 初始为 `null`，须审阅补丁后填写判定，再用 `summarize` 生成最终统计。准备和执行命令分别为：
+
+```bash
+cd "$HOME/projects/mini-swe-agent-portfolio"
+.venv/bin/python eval/run_batch.py prepare /tmp/ci-repair-eval-run-v1 eval/evidence/root-only eval/evidence/model-v1
+.venv/bin/python eval/run_batch.py execute eval/evidence/model-v1
+.venv/bin/python eval/run_batch.py summarize eval/evidence/model-v1
+```
