@@ -12,11 +12,13 @@ from minisweagent.run.ci_repair import _allowed_changes
 
 WORKFLOW = Path(__file__).parents[2] / "examples/ci_repair_demo/.github/workflows/repair.yml"
 VALIDATE = next(
-    step["run"] for step in yaml.safe_load(WORKFLOW.read_text())["jobs"]["publish"]["steps"]
+    step["run"]
+    for step in yaml.safe_load(WORKFLOW.read_text())["jobs"]["publish"]["steps"]
     if step.get("name") == "Validate the verified patch before publishing"
 )
 EXISTING = next(
-    step["run"] for step in yaml.safe_load(WORKFLOW.read_text())["jobs"]["publish"]["steps"]
+    step["run"]
+    for step in yaml.safe_load(WORKFLOW.read_text())["jobs"]["publish"]["steps"]
     if step.get("name") == "Check for an existing repair PR"
 )
 
@@ -75,17 +77,31 @@ def _patch(repo: Path, sha: str, kind: str = "source") -> None:
     output = repo / "repair-result"
     output.mkdir()
     (output / "patch.diff").write_text(patch)
-    (output / "report.json").write_text(json.dumps({
-        "status": "verified", "sha": sha, "workflow": "Pytest", "run_id": 17, "changed_files": changed_files,
-    }))
+    (output / "report.json").write_text(
+        json.dumps(
+            {
+                "status": "verified",
+                "sha": sha,
+                "workflow": "Pytest",
+                "run_id": 17,
+                "changed_files": changed_files,
+            }
+        )
+    )
 
 
 def _validate(repo: Path, sha: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", VALIDATE], cwd=repo,
-        env={**os.environ, "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}",
-             "FAILED_SHA": sha, "FAILED_RUN_ID": "17"},
-        capture_output=True, text=True,
+        ["bash", "-e", "-o", "pipefail", "-c", VALIDATE],
+        cwd=repo,
+        env={
+            **os.environ,
+            "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}",
+            "FAILED_SHA": sha,
+            "FAILED_RUN_ID": "17",
+        },
+        capture_output=True,
+        text=True,
     )
 
 
@@ -163,8 +179,15 @@ def test_disallowed_patch_cannot_be_staged(tmp_path: Path, kind: str, reason: st
 
 @pytest.mark.parametrize(
     ("kind", "allowed"),
-    [("source", ["src/calc.py"]), ("tests", []), ("workflow", []), ("deps", []),
-     ("mode", []), ("symlink", []), ("untracked", [])],
+    [
+        ("source", ["src/calc.py"]),
+        ("tests", []),
+        ("workflow", []),
+        ("deps", []),
+        ("mode", []),
+        ("symlink", []),
+        ("untracked", []),
+    ],
 )
 def test_agent_only_accepts_regular_source_edits(tmp_path: Path, kind: str, allowed: list[str]) -> None:
     repo, _ = _repo(tmp_path)
@@ -181,9 +204,14 @@ def test_existing_pr_skips_publication(tmp_path: Path) -> None:
     output = tmp_path / "github-output"
     result = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", EXISTING],
-        env={**os.environ, "GH_REPO": os.environ["MSWEA_CI_REPAIR_LIVE_REPO"],
-             "FAILED_SHA": os.environ["MSWEA_CI_REPAIR_LIVE_SHA"], "GITHUB_OUTPUT": str(output)},
-        capture_output=True, text=True,
+        env={
+            **os.environ,
+            "GH_REPO": os.environ["MSWEA_CI_REPAIR_LIVE_REPO"],
+            "FAILED_SHA": os.environ["MSWEA_CI_REPAIR_LIVE_SHA"],
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
     )
 
     assert result.returncode == 0, result.stderr
